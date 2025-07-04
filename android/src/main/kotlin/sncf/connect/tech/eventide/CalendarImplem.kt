@@ -9,6 +9,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.CountDownLatch
 
+class E {}
+
 class CalendarImplem(
     private var contentResolver: ContentResolver,
     private var permissionHandler: PermissionHandler,
