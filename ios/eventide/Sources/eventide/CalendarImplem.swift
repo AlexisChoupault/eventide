@@ -8,6 +8,8 @@
 import Foundation
 import UIKit
 
+class E {}
+
 class CalendarImplem: CalendarApi {
     private let easyEventStore: EasyEventStoreProtocol
     private let permissionHandler: PermissionHandlerProtocol
