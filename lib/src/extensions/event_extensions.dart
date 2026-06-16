@@ -12,7 +12,7 @@ extension EventToETEvent on Event {
       startDate: DateTime.fromMillisecondsSinceEpoch(startDate),
       endDate: DateTime.fromMillisecondsSinceEpoch(endDate),
       calendarId: calendarId,
-      description: description,
+      description: notes,
       url: url,
       location: location,
       reminders: reminders.toDurationList(),

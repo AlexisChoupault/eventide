@@ -127,81 +127,83 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                 children: [
                   MonthView(
                     controller: _controller,
-                    onEventTap: (calendarEventData, date) {
-                      if (state case Value(:final data?)) {
-                        final event = calendarEventData.event;
-                        if (event is ETEvent) {
-                          final relatedCalendar =
-                              data.calendars.keys.singleWhere((calendar) => calendar.id == event.calendarId);
-                          final calendarCubit = BlocProvider.of<CalendarCubit>(context);
+                    monthViewBuilders: MonthViewBuilders(
+                      onEventTap: (calendarEventData, date) {
+                        if (state case Value(:final data?)) {
+                          final event = calendarEventData.event;
+                          if (event is ETEvent) {
+                            final relatedCalendar =
+                                data.calendars.keys.singleWhere((calendar) => calendar.id == event.calendarId);
+                            final calendarCubit = BlocProvider.of<CalendarCubit>(context);
 
-                          Navigator.of(context)
-                              .push(
-                                MaterialPageRoute(
-                                  builder: (context) => EventDetailsScreen(
-                                    event: event,
-                                    isCalendarWritable: relatedCalendar.isWritable,
+                            Navigator.of(context)
+                                .push(
+                                  MaterialPageRoute(
+                                    builder: (context) => EventDetailsScreen(
+                                      event: event,
+                                      isCalendarWritable: relatedCalendar.isWritable,
+                                    ),
                                   ),
-                                ),
-                              )
-                              .then((_) => calendarCubit.loadFullContent());
+                                )
+                                .then((_) => calendarCubit.loadFullContent());
+                          }
                         }
-                      }
-                    },
-                    onDateLongPress: (date) {
-                      final calendarCubit = BlocProvider.of<CalendarCubit>(context);
+                      },
+                      onDateLongPress: (date) {
+                        final calendarCubit = BlocProvider.of<CalendarCubit>(context);
 
-                      showDialog(
-                        context: context,
-                        builder: (context) {
-                          return AlertDialog(
-                            title: const Text('Create event'),
-                            content: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                              child: EventForm(
-                                calendars: [...?state.data?.calendars.keys],
-                                initialDate: date,
-                                onSubmit: (selectedCalendar, title, description, isAllDay, startDate, endDate) async {
-                                  if (selectedCalendar == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Please select a calendar.'),
-                                        backgroundColor: Colors.red,
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  try {
-                                    await calendarCubit.createEvent(
-                                      calendar: selectedCalendar,
-                                      title: title,
-                                      description: description,
-                                      isAllDay: isAllDay,
-                                      startDate: startDate,
-                                      endDate: endDate,
-                                    );
-
-                                    if (context.mounted) {
-                                      Navigator.of(context).pop();
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      Navigator.of(context).pop();
+                        showDialog(
+                          context: context,
+                          builder: (context) {
+                            return AlertDialog(
+                              title: const Text('Create event'),
+                              content: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                child: EventForm(
+                                  calendars: [...?state.data?.calendars.keys],
+                                  initialDate: date,
+                                  onSubmit: (selectedCalendar, title, description, isAllDay, startDate, endDate) async {
+                                    if (selectedCalendar == null) {
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Error creating event: $e'),
+                                        const SnackBar(
+                                          content: Text('Please select a calendar.'),
                                           backgroundColor: Colors.red,
                                         ),
                                       );
+                                      return;
                                     }
-                                  }
-                                },
+                                    try {
+                                      await calendarCubit.createEvent(
+                                        calendar: selectedCalendar,
+                                        title: title,
+                                        description: description,
+                                        isAllDay: isAllDay,
+                                        startDate: startDate,
+                                        endDate: endDate,
+                                      );
+
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error creating event: $e'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
                   WeekView(
                     controller: _controller,

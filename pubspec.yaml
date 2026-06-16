@@ -10,8 +10,8 @@ workspace:
   - example/more-complex/native-only
 
 environment:
-  sdk: ^3.7.0
-  flutter: '>=3.29.0'
+  sdk: ^3.11.0
+  flutter: '>=3.41.0'
 
 dependencies:
   flutter:
@@ -21,9 +21,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
-  pigeon: ^26.1.0
-  timezone: ^0.10.1
+  flutter_lints: ^6.0.0
+  pigeon: ^27.1.0
+  timezone: ^0.11.0
   mocktail: ^1.0.4
   clock: ^1.1.2
   import_sorter: ^4.6.0

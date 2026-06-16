@@ -40,14 +40,14 @@ abstract class CalendarApi {
     required int startDate,
     required int endDate,
     required bool isAllDay,
-    required String? description,
+    required String? notes,
     required String? url,
     required String? location,
     required List<int>? reminders,
   });
 
   @async
-  @SwiftFunction('updateEvent(withId:calendarId:title:startDate:endDate:isAllDay:description:url:location:reminders:)')
+  @SwiftFunction('updateEvent(withId:calendarId:title:startDate:endDate:isAllDay:notes:url:location:reminders:)')
   Event updateEvent({
     required String eventId,
     required String calendarId,
@@ -55,7 +55,7 @@ abstract class CalendarApi {
     required int startDate,
     required int endDate,
     required bool isAllDay,
-    required String? description,
+    required String? notes,
     required String? url,
     required String? location,
     required List<int>? reminders,
@@ -67,7 +67,7 @@ abstract class CalendarApi {
     required int startDate,
     required int endDate,
     required bool isAllDay,
-    required String? description,
+    required String? notes,
     required String? url,
     required String? location,
     required List<int>? reminders,
@@ -79,7 +79,7 @@ abstract class CalendarApi {
     int? startDate,
     int? endDate,
     bool? isAllDay,
-    String? description,
+    String? notes,
     String? url,
     String? location,
     List<int>? reminders,
@@ -138,7 +138,7 @@ final class Event {
   final int endDate;
   final List<int> reminders;
   final List<Attendee> attendees;
-  final String? description;
+  final String? notes;
   final String? url;
   final String? location;
 
@@ -151,7 +151,7 @@ final class Event {
     required this.calendarId,
     required this.reminders,
     required this.attendees,
-    required this.description,
+    required this.notes,
     required this.url,
     required this.location,
   });
