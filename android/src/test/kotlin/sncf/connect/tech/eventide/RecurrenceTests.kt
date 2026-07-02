@@ -41,6 +41,7 @@ class RecurrenceTests {
     private lateinit var eventContentUri: Uri
     private lateinit var remindersContentUri: Uri
     private lateinit var attendeesContentUri: Uri
+    private lateinit var instancesContentUri: Uri
 
     @BeforeEach
     fun setup() {
@@ -55,6 +56,7 @@ class RecurrenceTests {
         eventContentUri = mockk(relaxed = true)
         remindersContentUri = mockk(relaxed = true)
         attendeesContentUri = mockk(relaxed = true)
+        instancesContentUri = mockk(relaxed = true)
 
         calendarImplem = CalendarImplem(
             context,
@@ -67,10 +69,19 @@ class RecurrenceTests {
             calendarContentUri,
             eventContentUri,
             remindersContentUri,
-            attendeesContentUri
+            attendeesContentUri,
+            instancesContentUri
         )
     }
 
+    /**
+     * The real `retrieveEvents` implementation builds the query URI via
+     * `instancesContentUri.buildUpon().appendPath(...).appendPath(...).build()`.
+     * Since `instancesContentUri` is a relaxed mockk, `buildUpon()` returns a relaxed
+     * `Uri.Builder` mock by default, whose chained calls also return relaxed mocks -
+     * so no extra stubbing of the builder chain is required for the resulting URI
+     * itself; we only need to stub `contentResolver.query` to match by URI matcher.
+     */
     private fun mockWritableCalendar() {
         val cursor = mockk<Cursor>(relaxed = true)
         every { contentResolver.query(calendarContentUri, any(), any(), any(), any()) } returns cursor
@@ -148,5 +159,63 @@ class RecurrenceTests {
 
         assertTrue(result!!.isSuccess)
         assertNull(result.getOrNull()!!.recurrenceRule)
+    }
+
+    @Test
+    fun `retrieveEvents returns recurrenceRule and originalInstanceTime from Instances BEGIN`() = runTest {
+        mockPermissionGranted(permissionHandler)
+
+        val instanceStart = 1751880000000L
+        val instanceEnd = 1751883600000L
+
+        // The master event Instances cursor: retrieveEvents now queries
+        // CalendarContract.Instances (expanded occurrences), not CalendarContract.Events.
+        val instancesCursor = mockk<Cursor>(relaxed = true)
+        every { contentResolver.query(any(), any(), any(), any(), any()) } returns instancesCursor
+        every { instancesCursor.moveToNext() } returnsMany listOf(true, false)
+
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID) } returns 0
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.TITLE) } returns 1
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.DESCRIPTION) } returns 2
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION) } returns 3
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN) } returns 4
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.END) } returns 5
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.RRULE) } returns 6
+        every { instancesCursor.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY) } returns 7
+
+        every { instancesCursor.getString(0) } returns "42" // EVENT_ID -> master event id
+        every { instancesCursor.getString(1) } returns "Standup"
+        every { instancesCursor.getString(2) } returns null
+        every { instancesCursor.getString(3) } returns null
+        every { instancesCursor.getLong(4) } returns instanceStart // BEGIN
+        every { instancesCursor.getLong(5) } returns instanceEnd // END
+        every { instancesCursor.getString(6) } returns "FREQ=WEEKLY;BYDAY=MO" // RRULE
+        every { instancesCursor.getInt(7) } returns 0
+
+        // Reminders/attendees are still looked up by the master EVENT_ID, unchanged.
+        val emptyCursor = mockk<Cursor>(relaxed = true)
+        every { emptyCursor.moveToNext() } returns false
+        every { contentResolver.query(attendeesContentUri, any(), any(), any(), any()) } returns emptyCursor
+        every { contentResolver.query(remindersContentUri, any(), any(), any(), any()) } returns emptyCursor
+
+        var result: Result<List<Event>>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.retrieveEvents(
+            calendarId = "1",
+            startDate = instanceStart,
+            endDate = instanceEnd,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        val event = result.getOrNull()?.firstOrNull()
+        assertEquals("42", event?.id)
+        assertEquals("FREQ=WEEKLY;BYDAY=MO", event?.recurrenceRule)
+        assertEquals(instanceStart, event?.originalInstanceTime)
+        assertEquals(instanceStart, event?.startDate)
     }
 }

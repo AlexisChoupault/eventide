@@ -32,6 +32,7 @@ class CalendarImplem(
     private val eventContentUri: Uri = CalendarContract.Events.CONTENT_URI,
     private val remindersContentUri: Uri = CalendarContract.Reminders.CONTENT_URI,
     private val attendeesContentUri: Uri = CalendarContract.Attendees.CONTENT_URI,
+    private val instancesContentUri: Uri? = null,
 ): CalendarApi, EventidePlugin.ActivityComponent {
     private var activity: Activity? = null
 
@@ -719,35 +720,40 @@ class CalendarImplem(
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val projection = arrayOf(
-                        CalendarContract.Events._ID,
-                        CalendarContract.Events.TITLE,
-                        CalendarContract.Events.DESCRIPTION,
-                        CalendarContract.Events.EVENT_LOCATION,
-                        CalendarContract.Events.DTSTART,
-                        CalendarContract.Events.DTEND,
-                        CalendarContract.Events.EVENT_TIMEZONE,
-                        CalendarContract.Events.ALL_DAY,
-                    )
-                    val selection =
-                        CalendarContract.Events.CALENDAR_ID + " = ? AND " + CalendarContract.Events.DTSTART + " >= ? AND " + CalendarContract.Events.DTEND + " <= ?"
-                    val selectionArgs = arrayOf(calendarId, startDate.toString(), endDate.toString())
+                    val instancesUri = (instancesContentUri ?: CalendarContract.Instances.CONTENT_URI).buildUpon()
+                        .appendPath(startDate.toString())
+                        .appendPath(endDate.toString())
+                        .build()
 
-                    val cursor = contentResolver.query(eventContentUri, projection, selection, selectionArgs, null)
+                    val projection = arrayOf(
+                        CalendarContract.Instances.EVENT_ID,
+                        CalendarContract.Instances.TITLE,
+                        CalendarContract.Instances.DESCRIPTION,
+                        CalendarContract.Instances.EVENT_LOCATION,
+                        CalendarContract.Instances.BEGIN,
+                        CalendarContract.Instances.END,
+                        CalendarContract.Instances.RRULE,
+                        CalendarContract.Instances.ALL_DAY,
+                    )
+                    val selection = CalendarContract.Instances.CALENDAR_ID + " = ?"
+                    val selectionArgs = arrayOf(calendarId)
+
+                    val cursor = contentResolver.query(instancesUri, projection, selection, selectionArgs, null)
                     val events = mutableListOf<Event>()
 
                     cursor?.use { c ->
                         val descriptionUrlHelper = DescriptionUrlHelper()
                         while (c.moveToNext()) {
-                            val id = c.getString(c.getColumnIndexOrThrow(CalendarContract.Events._ID))
-                            val title = c.getString(c.getColumnIndexOrThrow(CalendarContract.Events.TITLE))
+                            val id = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID))
+                            val title = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.TITLE))
                             val storedDescription =
-                                c.getString(c.getColumnIndexOrThrow(CalendarContract.Events.DESCRIPTION))
+                                c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.DESCRIPTION))
                             val (parsedDescription, parsedUrl) = descriptionUrlHelper.splitDescriptionAndUrl(storedDescription)
-                            val eventLocation = c.getString(c.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION))
-                            val start = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
-                            val end = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
-                            val isAllDay = c.getInt(c.getColumnIndexOrThrow(CalendarContract.Events.ALL_DAY)).toBoolean()
+                            val eventLocation = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_LOCATION))
+                            val start = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
+                            val end = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Instances.END))
+                            val recurrenceRule = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.RRULE))
+                            val isAllDay = c.getInt(c.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)).toBoolean()
 
                             val attendees = mutableListOf<Attendee>()
                             val attendeesLatch = CountDownLatch(1)
@@ -788,7 +794,9 @@ class CalendarImplem(
                                     location = eventLocation,
                                     isAllDay = isAllDay,
                                     reminders = reminders,
-                                    attendees = attendees
+                                    attendees = attendees,
+                                    recurrenceRule = recurrenceRule,
+                                    originalInstanceTime = start
                                 )
                             )
                         }
