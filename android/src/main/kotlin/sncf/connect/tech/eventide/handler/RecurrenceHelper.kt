@@ -13,10 +13,6 @@ import java.util.TimeZone
  * (thisEvent / thisAndFuture / allEvents) into `CalendarContract` operations.
  */
 object RecurrenceHelper {
-    private val untilFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }
-
     /**
      * Appends or replaces UNTIL in an RRULE string. Removes any existing COUNT
      * or UNTIL first, since COUNT and UNTIL are mutually exclusive per
@@ -28,6 +24,9 @@ object RecurrenceHelper {
      * from the recurring series.
      */
     fun patchWithUntil(rrule: String, untilMs: Long): String {
+        val untilFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
         val untilStr = untilFormat.format(Date(untilMs - 1))
         val parts = rrule
             .split(";")
