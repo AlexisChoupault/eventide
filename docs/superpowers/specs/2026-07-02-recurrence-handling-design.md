@@ -52,7 +52,7 @@ final class ETEvent {
 }
 ```
 
-`originalInstanceTime` is what makes a specific instance uniquely addressable across platforms. All instances of the same series share the same `id` (the master event ID); `originalInstanceTime` distinguishes them.
+`originalInstanceTime` is what makes a specific instance uniquely addressable across platforms. All instances of the same series share the same `id` (the master event ID); `originalInstanceTime` distinguishes them. For non-recurring events, `originalInstanceTime` is `null`.
 
 Example — a weekly standup every Monday at 9am:
 
@@ -83,8 +83,8 @@ Future<ETEvent> createEvent({
 Future<void> deleteEvent({
   required String calendarId,
   required String eventId,
-  ETSpan span = ETSpan.allEvents,
-  DateTime? originalInstanceTime, // required when span != allEvents
+  ETSpan span = ETSpan.thisEvent,  // least-destructive default
+  DateTime? originalInstanceTime,  // required when span != allEvents and event is recurring
 });
 ```
 
@@ -96,8 +96,8 @@ Default is `ETSpan.allEvents` to preserve backward compatibility for non-recurri
 Future<ETEvent> updateEvent({
   // ... existing params unchanged ...
   String? recurrenceRule,
-  ETSpan span = ETSpan.allEvents,
-  DateTime? originalInstanceTime, // required when span != allEvents
+  ETSpan span = ETSpan.thisEvent,  // least-destructive default
+  DateTime? originalInstanceTime,  // required when span != allEvents and event is recurring
 });
 ```
 
@@ -295,7 +295,7 @@ A new internal `RRuleSerializer` handles the reverse direction.
 
 | Span | Behavior |
 |------|----------|
-| `allEvents` | Fetch master via `event(withIdentifier:)`, remove with `.thisEvent` (on master this removes the whole series) |
+| `allEvents` | Fetch master via `event(withIdentifier:)` — this returns the non-occurrence master EKEvent. Remove with `.thisEvent` on the master EKEvent removes the entire series (not a single occurrence). |
 | `thisEvent` | Fetch specific occurrence: `events(matching:)` over `originalInstanceTime` date range, find occurrence where `occurrenceDate == originalInstanceTime`, remove with `.thisEvent` |
 | `thisAndFuture` | Fetch specific occurrence (same as above), remove with `.futureEvents` |
 
