@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.CalendarContract
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -19,6 +20,7 @@ import sncf.connect.tech.eventide.Mocks.Companion.mockPermissionGranted
 import sncf.connect.tech.eventide.handler.CalendarActivityManager
 import sncf.connect.tech.eventide.handler.IcsEventManager
 import sncf.connect.tech.eventide.handler.PermissionHandler
+import sncf.connect.tech.eventide.handler.RecurrenceHelper
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 
@@ -87,6 +89,20 @@ class RecurrenceTests {
         every { contentResolver.query(calendarContentUri, any(), any(), any(), any()) } returns cursor
         every { cursor.moveToNext() } returns true
         every { cursor.getInt(any()) } returns CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+    }
+
+    /**
+     * Mocks the `getCalendarId(eventId)` lookup (a broad `contentResolver.query(eventContentUri, ...)`
+     * matcher). Mirrors `mockCalendarIdFound()` in EventTests.kt. Individual tests that also need to
+     * stub more specific `eventContentUri` queries (e.g. RRULE, DTSTART/DTEND) should define those
+     * `every {}` blocks *after* calling this helper, since MockK resolves the most-recently-declared
+     * matching stub first.
+     */
+    private fun mockCalendarIdFound() {
+        val cursor = mockk<Cursor>(relaxed = true)
+        every { contentResolver.query(eventContentUri, any(), any(), any(), any()) } returns cursor
+        every { cursor.moveToNext() } returns true
+        every { cursor.getString(any()) } returns "1"
     }
 
     @Test
@@ -217,5 +233,266 @@ class RecurrenceTests {
         assertEquals("FREQ=WEEKLY;BYDAY=MO", event?.recurrenceRule)
         assertEquals(instanceStart, event?.originalInstanceTime)
         assertEquals(instanceStart, event?.startDate)
+    }
+
+    // ------------------------------------------------------------------
+    // RecurrenceHelper.patchWithUntil - pure function, no mocking needed
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `patchWithUntil appends UNTIL to a rrule with no COUNT or UNTIL`() {
+        val patched = RecurrenceHelper.patchWithUntil("FREQ=WEEKLY;BYDAY=MO", 1751880000000L)
+
+        assertEquals("FREQ=WEEKLY;BYDAY=MO;UNTIL=20250707T091959Z", patched)
+    }
+
+    @Test
+    fun `patchWithUntil replaces an existing UNTIL`() {
+        val patched = RecurrenceHelper.patchWithUntil(
+            "FREQ=DAILY;UNTIL=20200101T000000Z",
+            1751880000000L,
+        )
+
+        assertEquals("FREQ=DAILY;UNTIL=20250707T091959Z", patched)
+    }
+
+    @Test
+    fun `patchWithUntil replaces an existing COUNT since COUNT and UNTIL are mutually exclusive`() {
+        val patched = RecurrenceHelper.patchWithUntil("FREQ=DAILY;COUNT=10", 1751880000000L)
+
+        assertTrue(!patched.contains("COUNT="))
+        assertEquals("FREQ=DAILY;UNTIL=20250707T091959Z", patched)
+    }
+
+    // ------------------------------------------------------------------
+    // RecurrenceHelper.getMasterRrule / getMasterEventDurationMs
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `getMasterRrule returns the RRULE column value when the master event is found`() {
+        val cursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns cursor
+        every { cursor.moveToFirst() } returns true
+        every { cursor.getString(0) } returns "FREQ=WEEKLY;BYDAY=MO"
+
+        val rrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, "42")
+
+        assertEquals("FREQ=WEEKLY;BYDAY=MO", rrule)
+    }
+
+    @Test
+    fun `getMasterRrule returns null when the master event is not found`() {
+        val cursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns cursor
+        every { cursor.moveToFirst() } returns false
+
+        val rrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, "42")
+
+        assertNull(rrule)
+    }
+
+    @Test
+    fun `getMasterEventDurationMs returns DTEND minus DTSTART when the master event is found`() {
+        val cursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(
+                eventContentUri,
+                arrayOf(CalendarContract.Events.DTSTART, CalendarContract.Events.DTEND),
+                "_id = ?",
+                arrayOf("42"),
+                null,
+            )
+        } returns cursor
+        every { cursor.moveToFirst() } returns true
+        every { cursor.getLong(0) } returns 1751880000000L // DTSTART
+        every { cursor.getLong(1) } returns 1751883600000L // DTEND
+
+        val durationMs = RecurrenceHelper.getMasterEventDurationMs(contentResolver, eventContentUri, "42")
+
+        assertEquals(3_600_000L, durationMs)
+    }
+
+    @Test
+    fun `getMasterEventDurationMs defaults to one hour when the master event is not found`() {
+        val cursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(
+                eventContentUri,
+                arrayOf(CalendarContract.Events.DTSTART, CalendarContract.Events.DTEND),
+                "_id = ?",
+                arrayOf("42"),
+                null,
+            )
+        } returns cursor
+        every { cursor.moveToFirst() } returns false
+
+        val durationMs = RecurrenceHelper.getMasterEventDurationMs(contentResolver, eventContentUri, "42")
+
+        assertEquals(3_600_000L, durationMs)
+    }
+
+    // ------------------------------------------------------------------
+    // deleteEvent - span-aware behavior
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `deleteEvent with allEvents span deletes the master event row`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockCalendarIdFound()
+        mockWritableCalendar()
+
+        every { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) } returns 1
+
+        var result: Result<Unit>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.deleteEvent(
+            eventId = "42",
+            span = "allEvents",
+            originalInstanceTime = null,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) }
+    }
+
+    @Test
+    fun `deleteEvent with an unrecognized span falls back to deleting the master event row`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockCalendarIdFound()
+        mockWritableCalendar()
+
+        every { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) } returns 1
+
+        var result: Result<Unit>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.deleteEvent(
+            eventId = "42",
+            span = "somethingUnexpected",
+            originalInstanceTime = null,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) }
+    }
+
+    @Test
+    fun `deleteEvent with thisEvent span inserts a STATUS_CANCELED exception row instead of deleting`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockCalendarIdFound()
+        mockWritableCalendar()
+
+        // getMasterEventDurationMs query
+        val durationCursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(
+                eventContentUri,
+                arrayOf(CalendarContract.Events.DTSTART, CalendarContract.Events.DTEND),
+                "_id = ?",
+                arrayOf("42"),
+                null,
+            )
+        } returns durationCursor
+        every { durationCursor.moveToFirst() } returns true
+        every { durationCursor.getLong(0) } returns 1751880000000L // DTSTART
+        every { durationCursor.getLong(1) } returns 1751883600000L // DTEND
+
+        every { contentResolver.insert(eventContentUri, any()) } returns
+            mockk<Uri>(relaxed = true)
+
+        var result: Result<Unit>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.deleteEvent(
+            eventId = "42",
+            span = "thisEvent",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.insert(eventContentUri, any()) }
+        verify(exactly = 0) { contentResolver.delete(any(), any(), any()) }
+    }
+
+    @Test
+    fun `deleteEvent with thisAndFuture span patches the master RRULE with UNTIL when the event recurs`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockCalendarIdFound()
+        mockWritableCalendar()
+
+        val rruleCursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns rruleCursor
+        every { rruleCursor.moveToFirst() } returns true
+        every { rruleCursor.getString(0) } returns "FREQ=WEEKLY;BYDAY=MO"
+
+        every { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) } returns 1
+
+        var result: Result<Unit>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.deleteEvent(
+            eventId = "42",
+            span = "thisAndFuture",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) }
+        verify(exactly = 0) { contentResolver.delete(any(), any(), any()) }
+    }
+
+    @Test
+    fun `deleteEvent with thisAndFuture span falls back to deleting the master row when the event is not recurring`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockCalendarIdFound()
+        mockWritableCalendar()
+
+        val rruleCursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns rruleCursor
+        every { rruleCursor.moveToFirst() } returns false // no RRULE -> non-recurring master
+
+        every { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) } returns 1
+
+        var result: Result<Unit>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.deleteEvent(
+            eventId = "42",
+            span = "thisAndFuture",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) }
+        verify(exactly = 0) { contentResolver.update(any(), any(), any(), any()) }
     }
 }

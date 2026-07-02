@@ -18,6 +18,7 @@ import sncf.connect.tech.eventide.handler.CalendarActivityManager
 import sncf.connect.tech.eventide.handler.DescriptionUrlHelper
 import sncf.connect.tech.eventide.handler.IcsEventManager
 import sncf.connect.tech.eventide.handler.PermissionHandler
+import sncf.connect.tech.eventide.handler.RecurrenceHelper
 import java.util.concurrent.CountDownLatch
 
 class CalendarImplem(
@@ -820,7 +821,7 @@ class CalendarImplem(
         }
     }
 
-    override fun deleteEvent(eventId: String, callback: (Result<Unit>) -> Unit) {
+    override fun deleteEvent(eventId: String, span: String, originalInstanceTime: Long?, callback: (Result<Unit>) -> Unit) {
         permissionHandler.requestWritePermission { granted ->
             if (!granted) {
                 callback(
@@ -838,21 +839,10 @@ class CalendarImplem(
                 try {
                     val calendarId = getCalendarId(eventId)
                     if (isCalendarWritable(calendarId)) {
-                        val selection = CalendarContract.Events._ID + " = ?"
-                        val selectionArgs = arrayOf(eventId)
-
-                        val deleted = contentResolver.delete(eventContentUri, selection, selectionArgs)
-                        if (deleted > 0) {
-                            callback(Result.success(Unit))
-                        } else {
-                            callback(
-                                Result.failure(
-                                    FlutterError(
-                                        code = "NOT_FOUND",
-                                        message = "Failed to delete event"
-                                    )
-                                )
-                            )
+                        when (span) {
+                            "thisEvent" -> deleteThisEventOccurrence(eventId, calendarId, originalInstanceTime!!, callback)
+                            "thisAndFuture" -> deleteThisAndFutureEvents(eventId, originalInstanceTime!!, callback)
+                            else -> deleteMasterEventRow(eventId, callback) // "allEvents" and unknown spans
                         }
                     } else {
                         callback(
@@ -881,6 +871,85 @@ class CalendarImplem(
                 }
             }
         }
+    }
+
+    /**
+     * Deletes the master event row (and, transitively, all of its recurrence
+     * exceptions/instances). Used for the "allEvents" span, and as a safe
+     * fallback for unrecognized spans or non-recurring events.
+     */
+    private fun deleteMasterEventRow(eventId: String, callback: (Result<Unit>) -> Unit) {
+        val selection = CalendarContract.Events._ID + " = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        val deleted = contentResolver.delete(eventContentUri, selection, selectionArgs)
+        if (deleted > 0) {
+            callback(Result.success(Unit))
+        } else {
+            callback(
+                Result.failure(
+                    FlutterError(
+                        code = "NOT_FOUND",
+                        message = "Failed to delete event"
+                    )
+                )
+            )
+        }
+    }
+
+    /**
+     * "thisEvent" span: instead of removing the master row, inserts a
+     * canceled recurrence exception row for [originalInstanceTime], leaving
+     * the rest of the series untouched.
+     */
+    private fun deleteThisEventOccurrence(
+        eventId: String,
+        calendarId: String,
+        originalInstanceTime: Long,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val durationMs = RecurrenceHelper.getMasterEventDurationMs(contentResolver, eventContentUri, eventId)
+
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_ID, eventId.toLong())
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, originalInstanceTime)
+            put(CalendarContract.Events.DTSTART, originalInstanceTime)
+            put(CalendarContract.Events.DTEND, originalInstanceTime + durationMs)
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+            put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+        }
+
+        contentResolver.insert(eventContentUri, values)
+        callback(Result.success(Unit))
+    }
+
+    /**
+     * "thisAndFuture" span: patches the master event's RRULE with an UNTIL
+     * that ends the series right before [originalInstanceTime], so the target
+     * occurrence and all later ones are dropped. Falls back to deleting the
+     * whole master row when the event is not recurring (no RRULE).
+     */
+    private fun deleteThisAndFutureEvents(
+        eventId: String,
+        originalInstanceTime: Long,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        val rrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, eventId)
+        if (rrule == null) {
+            deleteMasterEventRow(eventId, callback)
+            return
+        }
+
+        val patchedRrule = RecurrenceHelper.patchWithUntil(rrule, originalInstanceTime)
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.RRULE, patchedRrule)
+        }
+
+        val selection = CalendarContract.Events._ID + " = ?"
+        val selectionArgs = arrayOf(eventId)
+        contentResolver.update(eventContentUri, values, selection, selectionArgs)
+        callback(Result.success(Unit))
     }
 
     override fun createReminder(reminder: Long, eventId: String, callback: (Result<Event>) -> Unit) {
