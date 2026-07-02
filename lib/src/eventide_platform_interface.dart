@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'package:eventide/src/et_span.dart';
 import 'package:eventide/src/eventide.dart';
 
 abstract class EventidePlatform extends PlatformInterface {
@@ -41,6 +42,7 @@ abstract class EventidePlatform extends PlatformInterface {
     String? url,
     String? location,
     Iterable<Duration>? reminders,
+    String? recurrenceRule,
   });
 
   Future<void> createEventInDefaultCalendar({
@@ -52,6 +54,7 @@ abstract class EventidePlatform extends PlatformInterface {
     String? url,
     String? location,
     Iterable<Duration>? reminders,
+    String? recurrenceRule,
   });
 
   Future<void> createEventThroughNativePlatform({
@@ -63,6 +66,7 @@ abstract class EventidePlatform extends PlatformInterface {
     String? url,
     String? location,
     Iterable<Duration>? reminders,
+    String? recurrenceRule,
   });
 
   Future<Iterable<ETEvent>> retrieveEvents({required String calendarId, DateTime? startDate, DateTime? endDate});
@@ -78,9 +82,12 @@ abstract class EventidePlatform extends PlatformInterface {
     String? url,
     String? location,
     Iterable<Duration>? reminders,
+    String? recurrenceRule,
+    ETSpan span = ETSpan.thisEvent,
+    DateTime? originalInstanceTime,
   });
 
-  Future<void> deleteEvent({required String eventId});
+  Future<void> deleteEvent({required String eventId, ETSpan span = ETSpan.thisEvent, DateTime? originalInstanceTime});
 
   Future<ETEvent> createReminder({required String eventId, required Duration durationBeforeEvent});
 
