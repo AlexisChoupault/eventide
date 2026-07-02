@@ -431,6 +431,7 @@ class CalendarImplem(
         url: String?,
         location: String?,
         reminders: List<Long>?,
+        recurrenceRule: String?,
         callback: (Result<Event>) -> Unit
     ) {
         permissionHandler.requestWritePermission { granted ->
@@ -461,6 +462,9 @@ class CalendarImplem(
                             put(CalendarContract.Events.DTEND, endDate)
                             put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
                             put(CalendarContract.Events.ALL_DAY, isAllDay.toInt())
+                            if (recurrenceRule != null) {
+                                put(CalendarContract.Events.RRULE, recurrenceRule)
+                            }
                         }
 
                         val eventUri = contentResolver.insert(eventContentUri, eventValues)
@@ -494,6 +498,8 @@ class CalendarImplem(
                                     isAllDay = isAllDay,
                                     reminders = reminders ?: emptyList(),
                                     attendees = emptyList(),
+                                    recurrenceRule = recurrenceRule,
+                                    originalInstanceTime = null,
                                 )
                                 callback(Result.success(event))
                             } else {
