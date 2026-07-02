@@ -30,6 +30,23 @@ This spec covers full recurrence support: creating recurring events, retrieving 
 
 ---
 
+## RFC 5545 Compliance Notes
+
+The design passes RRULE values as opaque strings through the Dart/Pigeon layer. Compliance responsibilities are split:
+
+| Concern | Status | Notes |
+|---------|--------|-------|
+| RRULE value format (no `RRULE:` prefix on wire) | Covered | Consistent with Android `CalendarContract.Events.RRULE` and iOS parsing |
+| FREQ, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, COUNT, UNTIL | Covered | Supported on both platforms |
+| BYYEARDAY, BYWEEKNO, BYSETPOS | Not supported | EventKit limitation; silently dropped on iOS, documented |
+| WKST (week start day) | Not handled | Defaults to Monday per RFC 5545; acceptable for most use cases |
+| COUNT + UNTIL mutual exclusivity | Not validated | Malformed RRULE passed through silently; caller's responsibility |
+| UNTIL date serialization format | Implementation note | When patching RRULE for `thisAndFuture` on Android, `UNTIL` must be formatted as a UTC datetime string (`YYYYMMDDTHHMMSSZ`), not an epoch integer. The iOS `RRuleParser` must also handle both DATE (`YYYYMMDD`) and DATETIME (`YYYYMMDDTHHMMSSZ`) formats for UNTIL. |
+| EXDATE in ICS generation | Known gap | `createEventInDefaultCalendar` / `createEventThroughNativePlatform` do not produce `EXDATE` lines for deleted instances. Acceptable since these are creation-only paths. |
+| RECURRENCE-ID in ICS | Known gap | ICS generation does not produce `RECURRENCE-ID` for modified instances. Not relevant for the direct native API path. |
+
+---
+
 ## Section 1: Dart API
 
 ### New type: `ETSpan`
@@ -88,7 +105,7 @@ Future<void> deleteEvent({
 });
 ```
 
-Default is `ETSpan.allEvents` to preserve backward compatibility for non-recurring event deletion.
+Default is `ETSpan.thisEvent` — the least destructive option. Non-recurring events ignore `span` entirely, so this is backward compatible.
 
 ### `updateEvent` — three new optional parameters
 
@@ -100,6 +117,22 @@ Future<ETEvent> updateEvent({
   DateTime? originalInstanceTime,  // required when span != allEvents and event is recurring
 });
 ```
+
+### `createEventInDefaultCalendar` and `createEventThroughNativePlatform` — one new optional parameter each
+
+```dart
+Future<void> createEventInDefaultCalendar({
+  // ... existing params unchanged ...
+  String? recurrenceRule,
+});
+
+Future<void> createEventThroughNativePlatform({
+  // ... existing params unchanged ...
+  String? recurrenceRule,
+});
+```
+
+For `createEventThroughNativePlatform`, the recurrence rule is pre-populated on the event before the native UI opens. The user can still modify or clear it inside the native calendar UI.
 
 ### `retrieveEvents` — signature unchanged
 
@@ -181,6 +214,20 @@ Event createEvent(
 );
 ```
 
+### `createEventInDefaultCalendar` and `createEventThroughNativePlatform` — one new parameter each
+
+```dart
+void createEventInDefaultCalendar(
+  // ... existing params unchanged ...
+  String? recurrenceRule,
+);
+
+void createEventThroughNativePlatform(
+  // ... existing params unchanged ...
+  String? recurrenceRule,
+);
+```
+
 ### `deleteEvent` — two new parameters
 
 ```dart
@@ -254,7 +301,7 @@ Each row provides `EVENT_ID` (master id), `BEGIN`/`END` (instance start/end), `R
 
 ### ICS generator (`IcsEventManager`)
 
-Used by `createEventInDefaultCalendar` / `createEventThroughNativePlatform`. Add one line to the generated VEVENT block:
+Used by `createEventInDefaultCalendar` / `createEventThroughNativePlatform` on Android. Add one line to the generated VEVENT block:
 
 ```
 RRULE:<recurrenceRule>
@@ -264,9 +311,9 @@ RRULE:<recurrenceRule>
 
 ## Section 4: iOS Implementation
 
-### `createEvent`
+### `createEvent` and `createEventInDefaultCalendar`
 
-`EKRecurrenceRule` has no RRULE string constructor. A new internal Swift utility `RRuleParser` converts the string to `EKRecurrenceRule` parameters.
+Both use the EKEventStore path. Same recurrence handling applies to both:
 
 ```swift
 if let rrule = recurrenceRule {
@@ -276,6 +323,10 @@ if let rrule = recurrenceRule {
 ```
 
 Supported RRULE properties: `FREQ`, `INTERVAL`, `BYDAY`, `BYMONTHDAY`, `BYMONTH`, `COUNT`, `UNTIL`. Unsupported properties (not handled by EventKit: `BYYEARDAY`, `BYWEEKNO`, `BYSETPOS`) are silently dropped and documented.
+
+### `createEventThroughNativePlatform`
+
+Same `RRuleParser` call as above, applied to the EKEvent before `EKEventEditViewController` is presented. The user can modify or clear the pre-populated recurrence rule inside the native UI.
 
 ### `retrieveEvents`
 
