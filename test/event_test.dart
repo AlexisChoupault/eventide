@@ -954,6 +954,104 @@ void main() {
     });
   });
 
+  group('ETEvent with recurrence', () {
+    test('toETEvent maps recurrenceRule', () {
+      final raw = Event(
+        id: '1',
+        title: 'T',
+        isAllDay: false,
+        startDate: 0,
+        endDate: 3600000,
+        calendarId: 'cal1',
+        reminders: [],
+        attendees: [],
+        description: null,
+        url: null,
+        location: null,
+        recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO',
+        originalInstanceTime: 1751788800000,
+      );
+      final etEvent = raw.toETEvent();
+      expect(etEvent.recurrenceRule, equals('FREQ=WEEKLY;BYDAY=MO'));
+    });
+
+    test('toETEvent maps originalInstanceTime to DateTime', () {
+      final raw = Event(
+        id: '1',
+        title: 'T',
+        isAllDay: false,
+        startDate: 0,
+        endDate: 3600000,
+        calendarId: 'cal1',
+        reminders: [],
+        attendees: [],
+        description: null,
+        url: null,
+        location: null,
+        recurrenceRule: 'FREQ=DAILY',
+        originalInstanceTime: 1751788800000,
+      );
+      final etEvent = raw.toETEvent();
+      expect(etEvent.originalInstanceTime, equals(DateTime.fromMillisecondsSinceEpoch(1751788800000, isUtc: true)));
+    });
+
+    test('toETEvent sets originalInstanceTime to null for non-recurring', () {
+      final raw = Event(
+        id: '1',
+        title: 'T',
+        isAllDay: false,
+        startDate: 0,
+        endDate: 3600000,
+        calendarId: 'cal1',
+        reminders: [],
+        attendees: [],
+        description: null,
+        url: null,
+        location: null,
+        recurrenceRule: null,
+        originalInstanceTime: null,
+      );
+      final etEvent = raw.toETEvent();
+      expect(etEvent.originalInstanceTime, isNull);
+      expect(etEvent.recurrenceRule, isNull);
+    });
+
+    test('ETEvent equality includes recurrenceRule and originalInstanceTime', () {
+      final dt = DateTime.fromMillisecondsSinceEpoch(1751788800000, isUtc: true);
+      final a = ETEvent(
+        id: '1',
+        title: 'T',
+        isAllDay: false,
+        startDate: DateTime(2026, 7, 7),
+        endDate: DateTime(2026, 7, 7, 1),
+        calendarId: 'cal1',
+        reminders: [],
+        attendees: [],
+        description: null,
+        url: null,
+        location: null,
+        recurrenceRule: 'FREQ=DAILY',
+        originalInstanceTime: dt,
+      );
+      final b = ETEvent(
+        id: '1',
+        title: 'T',
+        isAllDay: false,
+        startDate: DateTime(2026, 7, 7),
+        endDate: DateTime(2026, 7, 7, 1),
+        calendarId: 'cal1',
+        reminders: [],
+        attendees: [],
+        description: null,
+        url: null,
+        location: null,
+        recurrenceRule: 'FREQ=DAILY',
+        originalInstanceTime: dt,
+      );
+      expect(a, equals(b));
+    });
+  });
+
   group('ETEventCopy tests', () {
     test('ETEvent copyWithReminders', () {
       final etEvent = ETEvent(

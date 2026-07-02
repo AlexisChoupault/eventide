@@ -17,6 +17,9 @@ extension EventToETEvent on Event {
       location: location,
       reminders: reminders.toDurationList(),
       attendees: attendees.toETAttendeeList(),
+      recurrenceRule: recurrenceRule,
+      originalInstanceTime:
+          originalInstanceTime != null ? DateTime.fromMillisecondsSinceEpoch(originalInstanceTime!, isUtc: true) : null,
     );
   }
 }

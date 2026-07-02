@@ -156,6 +156,10 @@ final class ETCalendar {
 /// [location] is the location of the event.
 ///
 /// [reminders] is a list of [Duration] before the event.
+///
+/// [recurrenceRule] is the RRULE string describing the recurrence pattern of the event, if any.
+///
+/// [originalInstanceTime] is the original start time of this instance within a recurring series, if any.
 final class ETEvent {
   final String id;
   final String title;
@@ -168,6 +172,8 @@ final class ETEvent {
   final String? description;
   final String? url;
   final String? location;
+  final String? recurrenceRule;
+  final DateTime? originalInstanceTime;
 
   @override
   int get hashCode => Object.hashAll([
@@ -182,6 +188,8 @@ final class ETEvent {
     description,
     url,
     location,
+    recurrenceRule,
+    originalInstanceTime,
   ]);
 
   const ETEvent({
@@ -196,6 +204,8 @@ final class ETEvent {
     this.description,
     this.url,
     this.location,
+    this.recurrenceRule,
+    this.originalInstanceTime,
   });
 
   @override
@@ -213,7 +223,9 @@ final class ETEvent {
           listEquals(List.from(other.reminders), List.from(reminders)) &&
           other.description == description &&
           other.url == url &&
-          other.location == location;
+          other.location == location &&
+          other.recurrenceRule == recurrenceRule &&
+          other.originalInstanceTime == originalInstanceTime;
 }
 
 /// Represents an account.
