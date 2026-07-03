@@ -586,16 +586,32 @@ class CalendarImplem(
                 try {
                     if (isCalendarWritable(calendarId)) {
                         when (span) {
-                            "thisEvent" -> updateThisEventOccurrence(
-                                eventId, calendarId, title, startDate, endDate, isAllDay,
-                                description, url, location, reminders,
-                                originalInstanceTime!!, callback,
-                            )
-                            "thisAndFuture" -> updateThisAndFutureEvents(
-                                eventId, calendarId, title, startDate, endDate, isAllDay,
-                                description, url, location, reminders, recurrenceRule,
-                                originalInstanceTime!!, callback,
-                            )
+                            "thisEvent" -> if (originalInstanceTime != null) {
+                                updateThisEventOccurrence(
+                                    eventId, calendarId, title, startDate, endDate, isAllDay,
+                                    description, url, location, reminders,
+                                    originalInstanceTime, callback,
+                                )
+                            } else {
+                                // No originalInstanceTime provided (e.g. non-recurring event, legacy
+                                // caller) -- fall back to the "allEvents" behavior for backward compat.
+                                updateAllEvents(
+                                    eventId, calendarId, title, startDate, endDate, isAllDay,
+                                    description, url, location, reminders, recurrenceRule, callback,
+                                )
+                            }
+                            "thisAndFuture" -> if (originalInstanceTime != null) {
+                                updateThisAndFutureEvents(
+                                    eventId, calendarId, title, startDate, endDate, isAllDay,
+                                    description, url, location, reminders, recurrenceRule,
+                                    originalInstanceTime, callback,
+                                )
+                            } else {
+                                updateAllEvents(
+                                    eventId, calendarId, title, startDate, endDate, isAllDay,
+                                    description, url, location, reminders, recurrenceRule, callback,
+                                )
+                            }
                             else -> updateAllEvents( // "allEvents" and unrecognized spans
                                 eventId, calendarId, title, startDate, endDate, isAllDay,
                                 description, url, location, reminders, recurrenceRule, callback,
@@ -782,10 +798,7 @@ class CalendarImplem(
         }
 
         val newRrule = recurrenceRule
-            ?: existingRrule
-                ?.split(";")
-                ?.filter { !it.startsWith("UNTIL=") && !it.startsWith("COUNT=") }
-                ?.joinToString(";")
+            ?: existingRrule?.let { RecurrenceHelper.stripUntilAndCount(it) }
 
         val duration = endDate - startDate
         val descriptionUrlHelper = DescriptionUrlHelper()
@@ -956,7 +969,7 @@ class CalendarImplem(
                                     reminders = reminders,
                                     attendees = attendees,
                                     recurrenceRule = recurrenceRule,
-                                    originalInstanceTime = start
+                                    originalInstanceTime = if (recurrenceRule != null) start else null
                                 )
                             )
                         }
@@ -999,8 +1012,18 @@ class CalendarImplem(
                     val calendarId = getCalendarId(eventId)
                     if (isCalendarWritable(calendarId)) {
                         when (span) {
-                            "thisEvent" -> deleteThisEventOccurrence(eventId, calendarId, originalInstanceTime!!, callback)
-                            "thisAndFuture" -> deleteThisAndFutureEvents(eventId, originalInstanceTime!!, callback)
+                            "thisEvent" -> if (originalInstanceTime != null) {
+                                deleteThisEventOccurrence(eventId, calendarId, originalInstanceTime, callback)
+                            } else {
+                                // No originalInstanceTime provided (e.g. non-recurring event, legacy
+                                // caller) -- fall back to the "allEvents" behavior for backward compat.
+                                deleteMasterEventRow(eventId, callback)
+                            }
+                            "thisAndFuture" -> if (originalInstanceTime != null) {
+                                deleteThisAndFutureEvents(eventId, originalInstanceTime, callback)
+                            } else {
+                                deleteMasterEventRow(eventId, callback)
+                            }
                             else -> deleteMasterEventRow(eventId, callback) // "allEvents" and unknown spans
                         }
                     } else {

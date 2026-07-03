@@ -28,10 +28,23 @@ object RecurrenceHelper {
             timeZone = TimeZone.getTimeZone("UTC")
         }
         val untilStr = untilFormat.format(Date(untilMs - 1))
-        val parts = rrule
+        val stripped = stripUntilAndCount(rrule)
+        return if (stripped.isEmpty()) "UNTIL=$untilStr" else "$stripped;UNTIL=$untilStr"
+    }
+
+    /**
+     * Strips COUNT and UNTIL parts from an RRULE string, since they're mutually
+     * exclusive per https://datatracker.ietf.org/doc/html/rfc5545#section-3.3.10.
+     * Used both when patching a series with a new UNTIL (must remove any
+     * existing COUNT/UNTIL first) and when continuing a series with the old
+     * RRULE after a "thisAndFuture" edit (the new tail should not inherit the
+     * old series' end condition).
+     */
+    fun stripUntilAndCount(rrule: String): String {
+        return rrule
             .split(";")
             .filter { !it.startsWith("UNTIL=") && !it.startsWith("COUNT=") }
-        return (parts + "UNTIL=$untilStr").joinToString(";")
+            .joinToString(";")
     }
 
     /**
