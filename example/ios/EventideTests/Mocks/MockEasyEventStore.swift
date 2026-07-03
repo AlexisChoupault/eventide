@@ -106,7 +106,8 @@ class MockEasyEventStore: EasyEventStoreProtocol {
         description: String?,
         url: String?,
         location: String?,
-        timeIntervals: [TimeInterval]?
+        timeIntervals: [TimeInterval]?,
+        recurrenceRule: String?
     ) throws -> Event {
         guard let mockCalendar = calendars.first(where: { $0.id == calendarId }) else {
             throw PigeonError(
@@ -126,7 +127,8 @@ class MockEasyEventStore: EasyEventStoreProtocol {
             reminders: timeIntervals?.map({ Int64($0) }) ?? [],
             attendees: [],
             description: description,
-            url: url
+            url: url,
+            recurrenceRule: recurrenceRule
         )
         
         events.append(mockEvent)
@@ -134,7 +136,7 @@ class MockEasyEventStore: EasyEventStoreProtocol {
         return mockEvent
     }
     
-    func createEvent(title: String, startDate: Date, endDate: Date, isAllDay: Bool, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?) throws {
+    func createEvent(title: String, startDate: Date, endDate: Date, isAllDay: Bool, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?) throws {
         guard let firstCalendar = calendars.first else {
             throw PigeonError(
                 code: "NOT_FOUND",
@@ -153,13 +155,14 @@ class MockEasyEventStore: EasyEventStoreProtocol {
             reminders: timeIntervals?.map({ Int64($0) }) ?? [],
             attendees: [],
             description: description,
-            url: url
+            url: url,
+            recurrenceRule: recurrenceRule
         )
         
         events.append(mockEvent)
     }
     
-    func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, completion: @escaping (Result<Void, any Error>) -> Void) {
+    func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, completion: @escaping (Result<Void, any Error>) -> Void) {
         completion(.success(()))
     }
     
@@ -315,7 +318,7 @@ class MockEasyEventStore: EasyEventStoreProtocol {
 
 /// Mock that simulates user canceling the native event creation
 class MockEasyEventStoreCanceled: MockEasyEventStore {
-    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, completion: @escaping (Result<Void, any Error>) -> Void) {
+    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, completion: @escaping (Result<Void, any Error>) -> Void) {
         // Simulate user cancellation
         completion(.failure(PigeonError(
             code: "USER_CANCELED",
@@ -327,7 +330,7 @@ class MockEasyEventStoreCanceled: MockEasyEventStore {
 
 /// Mock that simulates presentation error
 class MockEasyEventStorePresentationError: MockEasyEventStore {
-    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, completion: @escaping (Result<Void, any Error>) -> Void) {
+    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, completion: @escaping (Result<Void, any Error>) -> Void) {
         // Simulate presentation error
         completion(.failure(PigeonError(
             code: "PRESENTATION_ERROR",
@@ -339,7 +342,7 @@ class MockEasyEventStorePresentationError: MockEasyEventStore {
 
 /// Mock that simulates event deletion during creation
 class MockEasyEventStoreEventDeleted: MockEasyEventStore {
-    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, completion: @escaping (Result<Void, any Error>) -> Void) {
+    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, completion: @escaping (Result<Void, any Error>) -> Void) {
         // Simulate event deletion
         completion(.failure(PigeonError(
             code: "EVENT_DELETED",
@@ -351,7 +354,7 @@ class MockEasyEventStoreEventDeleted: MockEasyEventStore {
 
 /// Mock that simulates unknown action
 class MockEasyEventStoreUnknownAction: MockEasyEventStore {
-    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, completion: @escaping (Result<Void, any Error>) -> Void) {
+    override func presentEventCreationViewController(title: String?, startDate: Date?, endDate: Date?, isAllDay: Bool?, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, completion: @escaping (Result<Void, any Error>) -> Void) {
         // Simulate unknown action
         completion(.failure(PigeonError(
             code: "GENERIC_ERROR",

@@ -131,6 +131,7 @@ class CalendarImplem: CalendarApi {
         url: String?,
         location: String?,
         reminders: [Int64]?,
+        recurrenceRule: String? = nil,
         completion: @escaping (Result<Event, Error>) -> Void) {
         permissionHandler.checkCalendarAccessThenExecute(.writeOnly) { [self] in
             do {
@@ -143,7 +144,8 @@ class CalendarImplem: CalendarApi {
                     description: description,
                     url: url,
                     location: location,
-                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) }
+                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) },
+                    recurrenceRule: recurrenceRule
                 )
                 completion(.success(createdEvent))
 
@@ -171,6 +173,7 @@ class CalendarImplem: CalendarApi {
         url: String?,
         location: String?,
         reminders: [Int64]?,
+        recurrenceRule: String? = nil,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         permissionHandler.checkCalendarAccessThenExecute(.writeOnly) { [self] in
@@ -183,7 +186,8 @@ class CalendarImplem: CalendarApi {
                     description: description,
                     url: url,
                     location: location,
-                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) }
+                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) },
+                    recurrenceRule: recurrenceRule
                 )
                 completion(.success(()))
 
@@ -212,6 +216,7 @@ class CalendarImplem: CalendarApi {
         url: String?,
         location: String?,
         reminders: [Int64]?,
+        recurrenceRule: String? = nil,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         easyEventStore.presentEventCreationViewController(
@@ -222,7 +227,8 @@ class CalendarImplem: CalendarApi {
             description: description,
             url: url,
             location: location,
-            timeIntervals: reminders?.compactMap { TimeInterval(-$0) }
+            timeIntervals: reminders?.compactMap { TimeInterval(-$0) },
+            recurrenceRule: recurrenceRule
         ) { result in
             completion(result)
         }

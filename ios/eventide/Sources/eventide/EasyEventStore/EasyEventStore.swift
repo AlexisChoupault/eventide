@@ -150,7 +150,8 @@ final class EasyEventStore: EasyEventStoreProtocol {
         description: String?,
         url: String?,
         location: String?,
-        timeIntervals: [TimeInterval]?
+        timeIntervals: [TimeInterval]?,
+        recurrenceRule: String?
     ) throws -> Event {
         let ekEvent = EKEvent(eventStore: eventStore)
 
@@ -171,6 +172,11 @@ final class EasyEventStore: EasyEventStoreProtocol {
         ekEvent.isAllDay = isAllDay
         ekEvent.alarms = timeIntervals?.compactMap({ EKAlarm(relativeOffset: $0) })
         ekEvent.location = location
+
+        if let rrule = recurrenceRule,
+           let ekRule = RRuleParser.parse(rrule) {
+            ekEvent.recurrenceRules = [ekRule]
+        }
 
         if url != nil {
             ekEvent.url = URL(string: url!)
@@ -198,7 +204,8 @@ final class EasyEventStore: EasyEventStoreProtocol {
         description: String?,
         url: String?,
         location: String?,
-        timeIntervals: [TimeInterval]?
+        timeIntervals: [TimeInterval]?,
+        recurrenceRule: String?
     ) throws {
         let ekEvent = EKEvent(eventStore: eventStore)
 
@@ -211,6 +218,11 @@ final class EasyEventStore: EasyEventStoreProtocol {
         ekEvent.isAllDay = isAllDay
         ekEvent.alarms = timeIntervals?.compactMap({ EKAlarm(relativeOffset: $0) })
         ekEvent.location = location
+
+        if let rrule = recurrenceRule,
+           let ekRule = RRuleParser.parse(rrule) {
+            ekEvent.recurrenceRules = [ekRule]
+        }
 
         if url != nil {
             ekEvent.url = URL(string: url!)
@@ -238,6 +250,7 @@ final class EasyEventStore: EasyEventStoreProtocol {
         url: String?,
         location: String?,
         timeIntervals: [TimeInterval]?,
+        recurrenceRule: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         eventEditManager.presentEventEditViewController(
@@ -249,6 +262,7 @@ final class EasyEventStore: EasyEventStoreProtocol {
             url: url,
             location: location,
             timeIntervals: timeIntervals,
+            recurrenceRule: recurrenceRule,
             completion: completion
         )
     }

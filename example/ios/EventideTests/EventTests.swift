@@ -1225,4 +1225,188 @@ final class EventTests: XCTestCase {
 
         waitForExpectations(timeout: timeout)
     }
+
+    // MARK: - Recurrence Rule Tests
+
+    func testCreateEvent_withRecurrenceRule_permissionGranted() {
+        let expectation = expectation(description: "Event with recurrence rule has been created")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.createEvent(
+            calendarId: "1",
+            title: "title",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: "description",
+            url: "url",
+            location: nil,
+            reminders: [],
+            recurrenceRule: "FREQ=DAILY;COUNT=5"
+        ) { createEventResult in
+            switch (createEventResult) {
+            case .success(let event):
+                XCTAssertEqual(event.recurrenceRule, "FREQ=DAILY;COUNT=5")
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been created")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testCreateEvent_withoutRecurrenceRule_permissionGranted() {
+        let expectation = expectation(description: "Event without recurrence rule has been created")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.createEvent(
+            calendarId: "1",
+            title: "title",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: "description",
+            url: "url",
+            location: nil,
+            reminders: [],
+            recurrenceRule: nil
+        ) { createEventResult in
+            switch (createEventResult) {
+            case .success(let event):
+                XCTAssertNil(event.recurrenceRule)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been created")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testCreateEventInDefaultCalendar_withRecurrenceRule_permissionGranted() {
+        let expectation = expectation(description: "Event with recurrence rule has been created in default calendar")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(3600)).millisecondsSince1970
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "Default Calendar",
+                    color: UIColor.blue.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.createEventInDefaultCalendar(
+            title: "Recurring Event",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: "Event in default calendar",
+            url: nil,
+            location: nil,
+            reminders: nil,
+            recurrenceRule: "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+        ) { result in
+            switch result {
+            case .success:
+                XCTAssertEqual(mockEasyEventStore.events.first!.recurrenceRule, "FREQ=WEEKLY;BYDAY=MO,WE,FR")
+                expectation.fulfill()
+            case .failure(let error):
+                XCTFail("Event should have been created: \(error)")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testCreateEventThroughNativePlatform_withRecurrenceRule_userSaves() {
+        let expectation = expectation(description: "Event creation through native platform with recurrence rule succeeded")
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "Test Calendar",
+                    color: UIColor.blue.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.createEventThroughNativePlatform(
+            title: "Recurring Native Event",
+            startDate: Date().millisecondsSince1970,
+            endDate: Date().addingTimeInterval(3600).millisecondsSince1970,
+            isAllDay: false,
+            description: "Created through native UI",
+            url: nil,
+            location: nil,
+            reminders: nil,
+            recurrenceRule: "FREQ=MONTHLY;BYMONTHDAY=1"
+        ) { result in
+            switch result {
+            case .success:
+                expectation.fulfill()
+            case .failure(let error):
+                XCTFail("Event creation should have succeeded, but failed with: \(error)")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
 }
