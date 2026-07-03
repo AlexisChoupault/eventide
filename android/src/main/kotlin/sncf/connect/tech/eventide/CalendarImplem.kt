@@ -820,6 +820,7 @@ class CalendarImplem(
         url: String?,
         location: String?,
         reminders: List<Long>?,
+        recurrenceRule: String?,
         callback: (Result<Unit>) -> Unit
     ) = shareEventAsIcs(
         title = title,
@@ -830,6 +831,7 @@ class CalendarImplem(
         url = url,
         location = location,
         reminders = reminders,
+        recurrenceRule = recurrenceRule,
         callback = callback
     )
 
@@ -842,6 +844,7 @@ class CalendarImplem(
         url: String?,
         location: String?,
         reminders: List<Long>?,
+        recurrenceRule: String?,
         callback: (Result<Unit>) -> Unit
     ) = shareEventAsIcs(
         title = title,
@@ -852,6 +855,7 @@ class CalendarImplem(
         url = url,
         location = location,
         reminders = reminders,
+        recurrenceRule = recurrenceRule,
         callback = callback
     )
 
@@ -1629,6 +1633,7 @@ class CalendarImplem(
         url: String?,
         location: String?,
         reminders: List<Long>?,
+        recurrenceRule: String?,
         callback: (Result<Unit>) -> Unit
     ) {
         try {
@@ -1641,7 +1646,8 @@ class CalendarImplem(
                 isAllDay = isAllDay,
                 description = mergedDescription,
                 location = location,
-                reminders = reminders
+                reminders = reminders,
+                recurrenceRule = recurrenceRule
             )
 
             calendarActivityManager.createShareIntent(icsContent) {
