@@ -38,9 +38,9 @@ protocol EasyEventStoreProtocol {
 
     func retrieveEvents(calendarId: String, startDate: Date, endDate: Date) throws -> [Event]
     
-    func updateEvent(eventId: String, calendarId: String, title: String, startDate: Date, endDate: Date, isAllDay: Bool, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?) throws -> Event
+    func updateEvent(eventId: String, calendarId: String, title: String, startDate: Date, endDate: Date, isAllDay: Bool, description: String?, url: String?, location: String?, timeIntervals: [TimeInterval]?, recurrenceRule: String?, span: String, originalInstanceTime: Int64?) throws -> Event
 
-    func deleteEvent(eventId: String) throws -> Void
+    func deleteEvent(eventId: String, span: String, originalInstanceTime: Int64?) throws -> Void
 
     func createReminder(timeInterval: TimeInterval, eventId: String) throws -> Event
 

@@ -453,7 +453,7 @@ final class EventTests: XCTestCase {
             permissionHandler: PermissionGranted()
         )
         
-        calendarImplem.deleteEvent(withId: "1") { deleteEventResult in
+        calendarImplem.deleteEvent(withId: "1", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
             switch (deleteEventResult) {
             case .success:
                 XCTAssert(mockEasyEventStore.events.isEmpty)
@@ -500,7 +500,7 @@ final class EventTests: XCTestCase {
             permissionHandler: PermissionGranted()
         )
         
-        calendarImplem.deleteEvent(withId: "1") { deleteEventResult in
+        calendarImplem.deleteEvent(withId: "1", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
             switch (deleteEventResult) {
             case .success:
                 XCTFail("Event should not have been deleted")
@@ -552,7 +552,7 @@ final class EventTests: XCTestCase {
             permissionHandler: PermissionGranted()
         )
         
-        calendarImplem.deleteEvent(withId: "2") { deleteEventResult in
+        calendarImplem.deleteEvent(withId: "2", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
             switch (deleteEventResult) {
             case .success:
                 XCTFail("Event should not have been deleted")
@@ -694,7 +694,7 @@ final class EventTests: XCTestCase {
             permissionHandler: PermissionRefused()
         )
         
-        calendarImplem.deleteEvent(withId: "1") { deleteEventResult in
+        calendarImplem.deleteEvent(withId: "1", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
             switch (deleteEventResult) {
             case .success:
                 XCTFail("Event should not have been deleted")
@@ -835,7 +835,7 @@ final class EventTests: XCTestCase {
             permissionHandler: PermissionError()
         )
         
-        calendarImplem.deleteEvent(withId: "1") { deleteEventResult in
+        calendarImplem.deleteEvent(withId: "1", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
             switch (deleteEventResult) {
             case .success:
                 XCTFail("Event should not have been deleted")
@@ -1266,7 +1266,9 @@ final class EventTests: XCTestCase {
             description: "New Desc",
             url: "New URL",
             location: "New Loc",
-            reminders: [10]
+            reminders: [10],
+            span: "allEvents",
+            originalInstanceTime: nil
         ) { result in
             switch (result) {
             case .success:
@@ -1463,6 +1465,280 @@ final class EventTests: XCTestCase {
                 expectation.fulfill()
             case .failure(let error):
                 XCTFail("Event creation should have succeeded, but failed with: \(error)")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    // MARK: - Span-aware deleteEvent / updateEvent Tests
+
+    /// NOTE: The mock does not model true recurring master/instance semantics, so
+    /// these tests verify the CalendarImplem -> EasyEventStoreProtocol parameter
+    /// forwarding contract (each span value is accepted end-to-end and the mock's
+    /// single-event delete/update succeeds), not real EventKit span behavior.
+    /// Real span semantics are exercised solely by `EasyEventStore`, which isn't
+    /// unit-testable in this environment (same limitation as Tasks 9-11).
+    func testDeleteEvent_thisEventSpan_permissionGranted() {
+        let expectation = expectation(description: "Event has been deleted with thisEvent span")
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ],
+            events: [
+                Event(
+                    id: "1",
+                    calendarId: "1",
+                    title: "title",
+                    isAllDay: false,
+                    startDate: Date().millisecondsSince1970,
+                    endDate: Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970,
+                    reminders: [],
+                    attendees: [],
+                    description: "description",
+                    url: "url"
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.deleteEvent(withId: "1", span: "thisEvent", originalInstanceTime: Date().millisecondsSince1970) { deleteEventResult in
+            switch (deleteEventResult) {
+            case .success:
+                XCTAssert(mockEasyEventStore.events.isEmpty)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been deleted")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testDeleteEvent_thisAndFutureSpan_permissionGranted() {
+        let expectation = expectation(description: "Event has been deleted with thisAndFuture span")
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ],
+            events: [
+                Event(
+                    id: "1",
+                    calendarId: "1",
+                    title: "title",
+                    isAllDay: false,
+                    startDate: Date().millisecondsSince1970,
+                    endDate: Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970,
+                    reminders: [],
+                    attendees: [],
+                    description: "description",
+                    url: "url"
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.deleteEvent(withId: "1", span: "thisAndFuture", originalInstanceTime: Date().millisecondsSince1970) { deleteEventResult in
+            switch (deleteEventResult) {
+            case .success:
+                XCTAssert(mockEasyEventStore.events.isEmpty)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been deleted")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testDeleteEvent_allEventsSpan_permissionGranted() {
+        let expectation = expectation(description: "Event has been deleted with allEvents span")
+
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ],
+            events: [
+                Event(
+                    id: "1",
+                    calendarId: "1",
+                    title: "title",
+                    isAllDay: false,
+                    startDate: Date().millisecondsSince1970,
+                    endDate: Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970,
+                    reminders: [],
+                    attendees: [],
+                    description: "description",
+                    url: "url"
+                )
+            ]
+        )
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.deleteEvent(withId: "1", span: "allEvents", originalInstanceTime: nil) { deleteEventResult in
+            switch (deleteEventResult) {
+            case .success:
+                XCTAssert(mockEasyEventStore.events.isEmpty)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been deleted")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testUpdateEvent_withRecurrenceRule_permissionGranted() {
+        let expectation = expectation(description: "Event has been updated with a recurrence rule")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970
+
+        let mockCalendar = Calendar(
+            id: "1",
+            title: "title",
+            color: UIColor.red.toInt64(),
+            isWritable: true,
+            account: Account(id: "local", name: "local", type: "local")
+        )
+
+        let mockEvent = Event(
+            id: "event1",
+            calendarId: "1",
+            title: "Old Title",
+            isAllDay: false,
+            startDate: startDate,
+            endDate: endDate,
+            reminders: [],
+            attendees: [],
+            description: "Old Desc",
+            url: "Old URL",
+            location: "Old Loc"
+        )
+
+        let mockEasyEventStore = MockEasyEventStore(calendars: [mockCalendar], events: [mockEvent])
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.updateEvent(
+            withId: "event1",
+            calendarId: "1",
+            title: "New Title",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: "Old Desc",
+            url: "Old URL",
+            location: "Old Loc",
+            reminders: [],
+            recurrenceRule: "FREQ=WEEKLY;COUNT=3",
+            span: "allEvents",
+            originalInstanceTime: nil
+        ) { result in
+            switch (result) {
+            case .success(let event):
+                XCTAssert(event.recurrenceRule == "FREQ=WEEKLY;COUNT=3")
+                XCTAssert(mockEasyEventStore.events.first?.recurrenceRule == "FREQ=WEEKLY;COUNT=3")
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been updated with a recurrence rule")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testUpdateEvent_thisEventSpan_permissionGranted() {
+        let expectation = expectation(description: "Event has been updated with thisEvent span")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(10)).millisecondsSince1970
+
+        let mockCalendar = Calendar(
+            id: "1",
+            title: "title",
+            color: UIColor.red.toInt64(),
+            isWritable: true,
+            account: Account(id: "local", name: "local", type: "local")
+        )
+
+        let mockEvent = Event(
+            id: "event1",
+            calendarId: "1",
+            title: "Old Title",
+            isAllDay: false,
+            startDate: startDate,
+            endDate: endDate,
+            reminders: [],
+            attendees: [],
+            description: "Old Desc",
+            url: "Old URL",
+            location: "Old Loc"
+        )
+
+        let mockEasyEventStore = MockEasyEventStore(calendars: [mockCalendar], events: [mockEvent])
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.updateEvent(
+            withId: "event1",
+            calendarId: "1",
+            title: "Updated Title",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: "Old Desc",
+            url: "Old URL",
+            location: "Old Loc",
+            reminders: [],
+            recurrenceRule: nil,
+            span: "thisEvent",
+            originalInstanceTime: startDate
+        ) { result in
+            switch (result) {
+            case .success(let event):
+                XCTAssert(event.title == "Updated Title")
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been updated")
             }
         }
 

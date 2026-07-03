@@ -180,6 +180,15 @@ class MockEasyEventStore: EasyEventStoreProtocol {
     }
     
     
+    // NOTE: [span] and [originalInstanceTime] are intentionally ignored for behavior
+    // purposes in this mock. The mock stores a FLAT `events: [Event]` array with no
+    // true master/instance modeling of recurring events, so it cannot meaningfully
+    // distinguish "thisEvent" / "thisAndFuture" / "allEvents" — every span behaves
+    // like "allEvents" here (operate on the single stored Event matching [eventId]).
+    // These tests exercise the CalendarImplem -> EasyEventStoreProtocol parameter
+    // forwarding contract only; real span semantics are exercised solely by
+    // `EasyEventStore` (real EventKit implementation), which isn't unit-testable
+    // in this environment (same limitation noted in Tasks 9-11).
     func updateEvent(
         eventId: String,
         calendarId: String,
@@ -190,7 +199,10 @@ class MockEasyEventStore: EasyEventStoreProtocol {
         description: String?,
         url: String?,
         location: String?,
-        timeIntervals: [TimeInterval]?
+        timeIntervals: [TimeInterval]?,
+        recurrenceRule: String?,
+        span: String,
+        originalInstanceTime: Int64?
     ) throws -> eventide.Event {
         guard let eventIndex = events.firstIndex(where: { $0.id == eventId }) else {
             throw PigeonError(
@@ -241,10 +253,17 @@ class MockEasyEventStore: EasyEventStoreProtocol {
             events[eventIndex].reminders = timeIntervals.map({ Int64($0) })
         }
         
+        if let recurrenceRule = recurrenceRule {
+            events[eventIndex].recurrenceRule = recurrenceRule
+        }
+        
         return events[eventIndex]
     }
     
-    func deleteEvent(eventId: String) throws {
+    // NOTE: see the comment above `updateEvent` — [span]/[originalInstanceTime] are
+    // ignored for behavior purposes; this mock always deletes the single stored
+    // Event matching [eventId], regardless of span.
+    func deleteEvent(eventId: String, span: String, originalInstanceTime: Int64?) throws {
         guard let eventIndex = events.firstIndex(where: { $0.id == eventId }) else {
             throw PigeonError(
                 code: "NOT_FOUND",

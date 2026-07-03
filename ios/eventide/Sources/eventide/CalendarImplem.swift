@@ -275,6 +275,9 @@ class CalendarImplem: CalendarApi {
         url: String?,
         location: String?,
         reminders: [Int64]?,
+        recurrenceRule: String? = nil,
+        span: String = "allEvents",
+        originalInstanceTime: Int64? = nil,
         completion: @escaping (Result<Event, Error>) -> Void
     ) {
         permissionHandler.checkCalendarAccessThenExecute(.fullAccess) { [self] in
@@ -289,7 +292,10 @@ class CalendarImplem: CalendarApi {
                     description: description,
                     url: url,
                     location: location,
-                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) }
+                    timeIntervals: reminders?.compactMap { TimeInterval(-$0) },
+                    recurrenceRule: recurrenceRule,
+                    span: span,
+                    originalInstanceTime: originalInstanceTime
                 )
                 completion(.success(event))
                 
@@ -308,10 +314,10 @@ class CalendarImplem: CalendarApi {
         }
     }
     
-    func deleteEvent(withId eventId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    func deleteEvent(withId eventId: String, span: String = "allEvents", originalInstanceTime: Int64? = nil, completion: @escaping (Result<Void, Error>) -> Void) {
         permissionHandler.checkCalendarAccessThenExecute(.fullAccess) { [self] in
             do {
-                try easyEventStore.deleteEvent(eventId: eventId)
+                try easyEventStore.deleteEvent(eventId: eventId, span: span, originalInstanceTime: originalInstanceTime)
                 completion(.success(()))
                 
             } catch {
