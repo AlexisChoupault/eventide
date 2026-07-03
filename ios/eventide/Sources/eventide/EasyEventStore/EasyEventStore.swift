@@ -301,19 +301,26 @@ final class EasyEventStore: EasyEventStoreProtocol {
         originalInstanceTime: Int64?
     ) throws -> Event {
         let ekEvent: EKEvent
+        var resolvedOccurrence = false
 
         switch span {
         case "thisEvent", "thisAndFuture":
-            guard let instanceTime = originalInstanceTime,
-                  let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime)
-            else {
-                throw PigeonError(
-                    code: "NOT_FOUND",
-                    message: "Event not found",
-                    details: "The provided event.id is certainly incorrect"
-                )
+            if let instanceTime = originalInstanceTime,
+               let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime) {
+                ekEvent = occurrence
+                resolvedOccurrence = true
+            } else {
+                // No originalInstanceTime provided (e.g. non-recurring event, legacy caller) —
+                // fall back to operating on the master event, matching "allEvents" semantics.
+                guard let master = eventStore.event(withIdentifier: eventId) else {
+                    throw PigeonError(
+                        code: "NOT_FOUND",
+                        message: "Event not found",
+                        details: "The provided event.id is certainly incorrect"
+                    )
+                }
+                ekEvent = master
             }
-            ekEvent = occurrence
 
         default: // "allEvents" and unrecognized spans fall back to the master event
             guard let master = eventStore.event(withIdentifier: eventId) else {
@@ -376,7 +383,10 @@ final class EasyEventStore: EasyEventStoreProtocol {
             ekEvent.recurrenceRules = [ekRule]
         }
 
-        let ekSpan: EKSpan = span == "thisAndFuture" ? .futureEvents : .thisEvent
+        // Only apply "future events" span semantics when we actually resolved a
+        // specific occurrence; a fallback to the master event (missing/invalid
+        // originalInstanceTime) always saves with `.thisEvent`.
+        let ekSpan: EKSpan = (span == "thisAndFuture" && resolvedOccurrence) ? .futureEvents : .thisEvent
 
         do {
             try eventStore.save(ekEvent, span: ekSpan, commit: true)
@@ -395,93 +405,95 @@ final class EasyEventStore: EasyEventStoreProtocol {
     func deleteEvent(eventId: String, span: String, originalInstanceTime: Int64?) throws {
         switch span {
         case "thisEvent":
-            guard let instanceTime = originalInstanceTime,
-                  let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime)
-            else {
-                throw PigeonError(
-                    code: "NOT_FOUND",
-                    message: "Event not found",
-                    details: "The provided event.id is certainly incorrect"
-                )
-            }
+            if let instanceTime = originalInstanceTime,
+               let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime) {
+                guard occurrence.calendar.allowsContentModifications else {
+                    throw PigeonError(
+                        code: "NOT_EDITABLE",
+                        message: "Calendar not editable",
+                        details: "The calendar related to this event does not allow content modifications"
+                    )
+                }
 
-            guard occurrence.calendar.allowsContentModifications else {
-                throw PigeonError(
-                    code: "NOT_EDITABLE",
-                    message: "Calendar not editable",
-                    details: "The calendar related to this event does not allow content modifications"
-                )
-            }
-
-            do {
-                try eventStore.remove(occurrence, span: .thisEvent)
-            } catch {
-                eventStore.reset()
-                throw PigeonError(
-                    code: "GENERIC_ERROR",
-                    message: "An error occurred",
-                    details: error.localizedDescription
-                )
+                do {
+                    try eventStore.remove(occurrence, span: .thisEvent)
+                } catch {
+                    eventStore.reset()
+                    throw PigeonError(
+                        code: "GENERIC_ERROR",
+                        message: "An error occurred",
+                        details: error.localizedDescription
+                    )
+                }
+            } else {
+                // No originalInstanceTime provided (e.g. non-recurring event, legacy caller) —
+                // fall back to removing the master event, matching "allEvents" semantics.
+                try deleteMasterEvent(eventId: eventId)
             }
 
         case "thisAndFuture":
-            guard let instanceTime = originalInstanceTime,
-                  let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime)
-            else {
-                throw PigeonError(
-                    code: "NOT_FOUND",
-                    message: "Event not found",
-                    details: "The provided event.id is certainly incorrect"
-                )
-            }
+            if let instanceTime = originalInstanceTime,
+               let occurrence = findOccurrence(eventId: eventId, originalInstanceTimeMs: instanceTime) {
+                guard occurrence.calendar.allowsContentModifications else {
+                    throw PigeonError(
+                        code: "NOT_EDITABLE",
+                        message: "Calendar not editable",
+                        details: "The calendar related to this event does not allow content modifications"
+                    )
+                }
 
-            guard occurrence.calendar.allowsContentModifications else {
-                throw PigeonError(
-                    code: "NOT_EDITABLE",
-                    message: "Calendar not editable",
-                    details: "The calendar related to this event does not allow content modifications"
-                )
-            }
-
-            do {
-                try eventStore.remove(occurrence, span: .futureEvents)
-            } catch {
-                eventStore.reset()
-                throw PigeonError(
-                    code: "GENERIC_ERROR",
-                    message: "An error occurred",
-                    details: error.localizedDescription
-                )
+                do {
+                    try eventStore.remove(occurrence, span: .futureEvents)
+                } catch {
+                    eventStore.reset()
+                    throw PigeonError(
+                        code: "GENERIC_ERROR",
+                        message: "An error occurred",
+                        details: error.localizedDescription
+                    )
+                }
+            } else {
+                // No originalInstanceTime provided (e.g. non-recurring event, legacy caller) —
+                // fall back to removing the master event, matching "allEvents" semantics.
+                try deleteMasterEvent(eventId: eventId)
             }
 
         default: // "allEvents" and unrecognized spans fall back to removing the whole series
-            guard let event = eventStore.event(withIdentifier: eventId) else {
-                throw PigeonError(
-                    code: "NOT_FOUND",
-                    message: "Event not found",
-                    details: "The provided event.id is certainly incorrect"
-                )
-            }
-            
-            guard event.calendar.allowsContentModifications else {
-                throw PigeonError(
-                    code: "NOT_EDITABLE",
-                    message: "Calendar not editable",
-                    details: "The calendar related to this event does not allow content modifications"
-                )
-            }
-                
-            do {
-                try eventStore.remove(event, span: .thisEvent)
-                
-            } catch {
-                eventStore.reset()
-                throw PigeonError(
-                    code: "GENERIC_ERROR",
-                    message: "An error occurred",
-                    details: error.localizedDescription
-                )
-            }
+            try deleteMasterEvent(eventId: eventId)
+        }
+    }
+
+    /// Removes the master event (and, transitively, its whole recurring series)
+    /// identified by [eventId]. Used for the "allEvents" span, and as a safe
+    /// fallback for "thisEvent"/"thisAndFuture" when no originalInstanceTime is
+    /// provided (e.g. non-recurring events, or legacy pre-recurrence callers).
+    private func deleteMasterEvent(eventId: String) throws {
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw PigeonError(
+                code: "NOT_FOUND",
+                message: "Event not found",
+                details: "The provided event.id is certainly incorrect"
+            )
+        }
+
+        guard event.calendar.allowsContentModifications else {
+            throw PigeonError(
+                code: "NOT_EDITABLE",
+                message: "Calendar not editable",
+                details: "The calendar related to this event does not allow content modifications"
+            )
+        }
+
+        do {
+            try eventStore.remove(event, span: .thisEvent)
+
+        } catch {
+            eventStore.reset()
+            throw PigeonError(
+                code: "GENERIC_ERROR",
+                message: "An error occurred",
+                details: error.localizedDescription
+            )
         }
     }
     
@@ -653,7 +665,7 @@ fileprivate extension EKEvent {
             url: url?.absoluteString,
             location: location,
             recurrenceRule: recurrenceRules?.first.map { RRuleSerializer.serialize($0) },
-            originalInstanceTime: occurrenceDate.millisecondsSince1970
+            originalInstanceTime: (recurrenceRules?.isEmpty == false) ? occurrenceDate.millisecondsSince1970 : nil
         )
     }
 }

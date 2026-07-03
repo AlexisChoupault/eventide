@@ -1744,4 +1744,174 @@ final class EventTests: XCTestCase {
 
         waitForExpectations(timeout: timeout)
     }
+
+    // ------------------------------------------------------------------
+    // "Old call site" backward-compatibility regression tests (Critical #1/#2 fix).
+    //
+    // NOTE: MockEasyEventStore intentionally ignores [span]/[originalInstanceTime]
+    // (see comments on MockEasyEventStore.updateEvent/deleteEvent) — it has no
+    // true master/instance modeling, so every span behaves like "allEvents" here.
+    // These tests exercise the CalendarImplem -> EasyEventStoreProtocol parameter
+    // forwarding contract: a pre-recurrence caller passing `span: "thisEvent"`
+    // (the new Dart default) with `originalInstanceTime: nil` must still succeed
+    // and mutate the single stored event in place (no duplicate created). The
+    // real EventKit branching fixed in `EasyEventStore.updateEvent`/`deleteEvent`
+    // (falling back to the master event when originalInstanceTime is nil, instead
+    // of throwing NOT_FOUND) is not unit-testable in this environment since
+    // `EKEventStore` cannot be faked (same limitation noted for Tasks 9-11).
+    // ------------------------------------------------------------------
+
+    func testDeleteEvent_thisEventSpan_nilOriginalInstanceTime_nonRecurringEvent_permissionGranted() {
+        let expectation = expectation(description: "Non-recurring event deleted with thisEvent span and nil originalInstanceTime")
+
+        let mockCalendar = Calendar(
+            id: "1",
+            title: "title",
+            color: UIColor.red.toInt64(),
+            isWritable: true,
+            account: Account(id: "local", name: "local", type: "local")
+        )
+
+        let mockEvent = Event(
+            id: "event1",
+            calendarId: "1",
+            title: "Standup",
+            isAllDay: false,
+            startDate: Date().millisecondsSince1970,
+            endDate: Date().addingTimeInterval(TimeInterval(3600)).millisecondsSince1970,
+            reminders: [],
+            attendees: []
+        )
+
+        let mockEasyEventStore = MockEasyEventStore(calendars: [mockCalendar], events: [mockEvent])
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.deleteEvent(withId: "event1", span: "thisEvent", originalInstanceTime: nil) { deleteEventResult in
+            switch (deleteEventResult) {
+            case .success:
+                XCTAssertTrue(mockEasyEventStore.events.isEmpty)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Non-recurring event should have been deleted even with span=thisEvent and originalInstanceTime=nil")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testUpdateEvent_thisEventSpan_nilOriginalInstanceTime_nonRecurringEvent_permissionGranted() {
+        let expectation = expectation(description: "Non-recurring event updated in place with thisEvent span and nil originalInstanceTime")
+
+        let startDate = Date().millisecondsSince1970
+        let endDate = Date().addingTimeInterval(TimeInterval(3600)).millisecondsSince1970
+
+        let mockCalendar = Calendar(
+            id: "1",
+            title: "title",
+            color: UIColor.red.toInt64(),
+            isWritable: true,
+            account: Account(id: "local", name: "local", type: "local")
+        )
+
+        let mockEvent = Event(
+            id: "event1",
+            calendarId: "1",
+            title: "Old Title",
+            isAllDay: false,
+            startDate: startDate,
+            endDate: endDate,
+            reminders: [],
+            attendees: []
+        )
+
+        let mockEasyEventStore = MockEasyEventStore(calendars: [mockCalendar], events: [mockEvent])
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.updateEvent(
+            withId: "event1",
+            calendarId: "1",
+            title: "New title",
+            startDate: startDate,
+            endDate: endDate,
+            isAllDay: false,
+            description: nil,
+            url: nil,
+            location: nil,
+            reminders: nil,
+            recurrenceRule: nil,
+            span: "thisEvent",
+            originalInstanceTime: nil
+        ) { result in
+            switch (result) {
+            case .success(let event):
+                XCTAssertEqual(event.title, "New title")
+                XCTAssertEqual(mockEasyEventStore.events.count, 1, "Update must mutate the existing event, not create a duplicate")
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Non-recurring event should have been updated even with span=thisEvent and originalInstanceTime=nil")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
+
+    func testRetrieveEvents_nonRecurringEvent_hasNilOriginalInstanceTime_permissionGranted() {
+        let expectation = expectation(description: "Non-recurring event retrieved with a nil originalInstanceTime")
+
+        let queryStart = Date().addingTimeInterval(TimeInterval(-60))
+        let queryEnd = Date().addingTimeInterval(TimeInterval(3600))
+        let eventStart = Date()
+        let eventEnd = Date().addingTimeInterval(TimeInterval(1800))
+
+        let mockCalendar = Calendar(
+            id: "1",
+            title: "title",
+            color: UIColor.red.toInt64(),
+            isWritable: true,
+            account: Account(id: "local", name: "local", type: "local")
+        )
+
+        let mockEvent = Event(
+            id: "event1",
+            calendarId: "1",
+            title: "Standup",
+            isAllDay: false,
+            startDate: eventStart.millisecondsSince1970,
+            endDate: eventEnd.millisecondsSince1970,
+            reminders: [],
+            attendees: []
+        )
+
+        let mockEasyEventStore = MockEasyEventStore(calendars: [mockCalendar], events: [mockEvent])
+
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+
+        calendarImplem.retrieveEvents(
+            calendarId: "1",
+            startDate: queryStart.millisecondsSince1970,
+            endDate: queryEnd.millisecondsSince1970
+        ) { result in
+            switch (result) {
+            case .success(let events):
+                XCTAssertEqual(events.count, 1)
+                XCTAssertNil(events.first!.originalInstanceTime)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Events should have been retrieved")
+            }
+        }
+
+        waitForExpectations(timeout: timeout)
+    }
 }
