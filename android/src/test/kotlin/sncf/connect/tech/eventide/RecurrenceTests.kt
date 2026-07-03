@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import sncf.connect.tech.eventide.Mocks.Companion.mockPermissionGranted
+import sncf.connect.tech.eventide.Mocks.Companion.mockRetrieveAttendees
+import sncf.connect.tech.eventide.Mocks.Companion.mockRetrieveEvents
+import sncf.connect.tech.eventide.Mocks.Companion.mockRetrieveReminders
 import sncf.connect.tech.eventide.handler.CalendarActivityManager
 import sncf.connect.tech.eventide.handler.IcsEventManager
 import sncf.connect.tech.eventide.handler.PermissionHandler
@@ -494,5 +497,233 @@ class RecurrenceTests {
         assertTrue(result!!.isSuccess)
         verify { contentResolver.delete(eventContentUri, "_id = ?", arrayOf("42")) }
         verify(exactly = 0) { contentResolver.update(any(), any(), any(), any()) }
+    }
+
+    // ------------------------------------------------------------------
+    // updateEvent - span-aware behavior
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `updateEvent with allEvents span updates the master event row in place`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockWritableCalendar()
+
+        every { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) } returns 1
+
+        mockRetrieveEvents(contentResolver, eventContentUri)
+        mockRetrieveAttendees(contentResolver, attendeesContentUri)
+        mockRetrieveReminders(contentResolver, remindersContentUri)
+
+        var result: Result<Event>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.updateEvent(
+            eventId = "42",
+            calendarId = "1",
+            title = "Updated Standup",
+            startDate = 1751880000000L,
+            endDate = 1751883600000L,
+            isAllDay = false,
+            description = null,
+            url = null,
+            location = null,
+            reminders = null,
+            recurrenceRule = "FREQ=WEEKLY;BYDAY=MO,WE",
+            span = "allEvents",
+            originalInstanceTime = null,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) }
+        verify(exactly = 0) { contentResolver.insert(eventContentUri, any()) }
+    }
+
+    @Test
+    fun `updateEvent with an unrecognized span falls back to updating the master event row in place`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockWritableCalendar()
+
+        every { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) } returns 1
+
+        mockRetrieveEvents(contentResolver, eventContentUri)
+        mockRetrieveAttendees(contentResolver, attendeesContentUri)
+        mockRetrieveReminders(contentResolver, remindersContentUri)
+
+        var result: Result<Event>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.updateEvent(
+            eventId = "42",
+            calendarId = "1",
+            title = "Updated Standup",
+            startDate = 1751880000000L,
+            endDate = 1751883600000L,
+            isAllDay = false,
+            description = null,
+            url = null,
+            location = null,
+            reminders = null,
+            recurrenceRule = null,
+            span = "somethingUnexpected",
+            originalInstanceTime = null,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) }
+        verify(exactly = 0) { contentResolver.insert(eventContentUri, any()) }
+    }
+
+    @Test
+    fun `updateEvent with thisEvent span inserts a new exception row instead of updating the master`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockWritableCalendar()
+
+        val insertedUri = mockk<Uri>(relaxed = true)
+        every { contentResolver.insert(eventContentUri, any()) } returns insertedUri
+        every { insertedUri.lastPathSegment } returns "99"
+
+        mockRetrieveEvents(contentResolver, eventContentUri)
+        mockRetrieveAttendees(contentResolver, attendeesContentUri)
+        mockRetrieveReminders(contentResolver, remindersContentUri)
+
+        var result: Result<Event>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.updateEvent(
+            eventId = "42",
+            calendarId = "1",
+            title = "Just today",
+            startDate = 1751880000000L,
+            endDate = 1751883600000L,
+            isAllDay = false,
+            description = null,
+            url = null,
+            location = null,
+            reminders = null,
+            recurrenceRule = null,
+            span = "thisEvent",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify { contentResolver.insert(eventContentUri, any()) }
+        verify(exactly = 0) { contentResolver.update(eventContentUri, any(), any(), any()) }
+    }
+
+    @Test
+    fun `updateEvent with thisAndFuture span truncates the master series and inserts a new one starting at originalInstanceTime`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockWritableCalendar()
+
+        // mockRetrieveEvents stubs a broad contentResolver.query(eventContentUri, any(), any(), any(), any())
+        // matcher (used to re-fetch the event after the update completes). Since MockK resolves the
+        // most-recently-declared matching stub first, the more specific RRULE-projection query below
+        // must be declared *after* this call so it takes precedence for that exact call shape.
+        mockRetrieveEvents(contentResolver, eventContentUri)
+        mockRetrieveAttendees(contentResolver, attendeesContentUri)
+        mockRetrieveReminders(contentResolver, remindersContentUri)
+
+        val rruleCursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns rruleCursor
+        every { rruleCursor.moveToFirst() } returns true
+        every { rruleCursor.getString(0) } returns "FREQ=WEEKLY;BYDAY=MO"
+
+        every { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) } returns 1
+
+        val insertedUri = mockk<Uri>(relaxed = true)
+        every { contentResolver.insert(eventContentUri, any()) } returns insertedUri
+        every { insertedUri.lastPathSegment } returns "99"
+
+        var result: Result<Event>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.updateEvent(
+            eventId = "42",
+            calendarId = "1",
+            title = "Updated Standup",
+            startDate = 1751880000000L,
+            endDate = 1751883600000L,
+            isAllDay = false,
+            description = null,
+            url = null,
+            location = null,
+            reminders = null,
+            recurrenceRule = "FREQ=WEEKLY;BYDAY=MO,WE",
+            span = "thisAndFuture",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        // Master series truncated (UNTIL patch) via update...
+        verify { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) }
+        // ...and a new master row inserted to continue the series.
+        verify { contentResolver.insert(eventContentUri, any()) }
+    }
+
+    @Test
+    fun `updateEvent with thisAndFuture span on a non-recurring master skips the truncation update but still inserts the new series`() = runTest {
+        mockPermissionGranted(permissionHandler)
+        mockWritableCalendar()
+
+        // See ordering note in the previous test: declare the broad mockRetrieveEvents
+        // stub first so the specific RRULE-projection query below takes precedence.
+        mockRetrieveEvents(contentResolver, eventContentUri)
+        mockRetrieveAttendees(contentResolver, attendeesContentUri)
+        mockRetrieveReminders(contentResolver, remindersContentUri)
+
+        val rruleCursor = mockk<Cursor>(relaxed = true)
+        every {
+            contentResolver.query(eventContentUri, arrayOf(CalendarContract.Events.RRULE), "_id = ?", arrayOf("42"), null)
+        } returns rruleCursor
+        every { rruleCursor.moveToFirst() } returns false // no RRULE -> non-recurring master
+
+        val insertedUri = mockk<Uri>(relaxed = true)
+        every { contentResolver.insert(eventContentUri, any()) } returns insertedUri
+        every { insertedUri.lastPathSegment } returns "99"
+
+        var result: Result<Event>? = null
+        val latch = CountDownLatch(1)
+        calendarImplem.updateEvent(
+            eventId = "42",
+            calendarId = "1",
+            title = "Updated Standup",
+            startDate = 1751880000000L,
+            endDate = 1751883600000L,
+            isAllDay = false,
+            description = null,
+            url = null,
+            location = null,
+            reminders = null,
+            recurrenceRule = null,
+            span = "thisAndFuture",
+            originalInstanceTime = 1751880000000L,
+        ) {
+            result = it
+            latch.countDown()
+        }
+
+        latch.await()
+
+        assertTrue(result!!.isSuccess)
+        verify(exactly = 0) { contentResolver.update(eventContentUri, any(), "_id = ?", arrayOf("42")) }
+        verify { contentResolver.insert(eventContentUri, any()) }
     }
 }

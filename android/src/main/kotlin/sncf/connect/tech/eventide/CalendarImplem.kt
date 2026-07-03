@@ -564,6 +564,9 @@ class CalendarImplem(
         url: String?,
         location: String?,
         reminders: List<Long>?,
+        recurrenceRule: String?,
+        span: String,
+        originalInstanceTime: Long?,
         callback: (Result<Event>) -> Unit
     ) {
         permissionHandler.requestWritePermission { granted ->
@@ -582,49 +585,20 @@ class CalendarImplem(
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     if (isCalendarWritable(calendarId)) {
-                        val descriptionUrlHelper = DescriptionUrlHelper()
-                        val mergedDescription = descriptionUrlHelper.mergeDescriptionAndUrl(description, url)
-
-                        val eventValues = ContentValues().apply {
-                            put(CalendarContract.Events.CALENDAR_ID, calendarId)
-                            put(CalendarContract.Events.TITLE, title)
-                            put(CalendarContract.Events.DESCRIPTION, mergedDescription)
-                            put(CalendarContract.Events.EVENT_LOCATION, location)
-                            put(CalendarContract.Events.DTSTART, startDate)
-                            put(CalendarContract.Events.DTEND, endDate)
-                            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-                            put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-                        }
-
-                        val selection = CalendarContract.Events._ID + " = ?"
-                        val selectionArgs = arrayOf(eventId)
-
-                        val updated = contentResolver.update(eventContentUri, eventValues, selection, selectionArgs)
-                        
-                        if (reminders != null) {
-                            val reminderSelection = CalendarContract.Reminders.EVENT_ID + " = ?"
-                            contentResolver.delete(remindersContentUri, reminderSelection, arrayOf(eventId))
-
-                            reminders.forEach { reminder ->
-                                val reminderValues = ContentValues().apply {
-                                    put(CalendarContract.Reminders.EVENT_ID, eventId)
-                                    put(CalendarContract.Reminders.MINUTES, reminder)
-                                    put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-                                }
-                                contentResolver.insert(remindersContentUri, reminderValues)
-                            }
-                        }
-
-                        if (updated > 0) {
-                            retrieveEvent(eventId, callback)
-                        } else {
-                            callback(
-                                Result.failure(
-                                    FlutterError(
-                                        code = "NOT_FOUND",
-                                        message = "Failed to update event"
-                                    )
-                                )
+                        when (span) {
+                            "thisEvent" -> updateThisEventOccurrence(
+                                eventId, calendarId, title, startDate, endDate, isAllDay,
+                                description, url, location, reminders,
+                                originalInstanceTime!!, callback,
+                            )
+                            "thisAndFuture" -> updateThisAndFutureEvents(
+                                eventId, calendarId, title, startDate, endDate, isAllDay,
+                                description, url, location, reminders, recurrenceRule,
+                                originalInstanceTime!!, callback,
+                            )
+                            else -> updateAllEvents( // "allEvents" and unrecognized spans
+                                eventId, calendarId, title, startDate, endDate, isAllDay,
+                                description, url, location, reminders, recurrenceRule, callback,
                             )
                         }
                     } else {
@@ -654,6 +628,187 @@ class CalendarImplem(
                 }
             }
         }
+    }
+
+    /**
+     * Replaces all reminders for [targetEventId] with [reminders] (no-op when
+     * [reminders] is null). Shared by all `updateEvent` span branches.
+     */
+    private fun replaceReminders(targetEventId: String, reminders: List<Long>?) {
+        if (reminders == null) return
+
+        val reminderSelection = CalendarContract.Reminders.EVENT_ID + " = ?"
+        contentResolver.delete(remindersContentUri, reminderSelection, arrayOf(targetEventId))
+
+        reminders.forEach { reminder ->
+            val reminderValues = ContentValues().apply {
+                put(CalendarContract.Reminders.EVENT_ID, targetEventId)
+                put(CalendarContract.Reminders.MINUTES, reminder)
+                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+            }
+            contentResolver.insert(remindersContentUri, reminderValues)
+        }
+    }
+
+    /**
+     * "allEvents" span (and safe fallback for unrecognized spans): updates the
+     * master event row in place, exactly as the pre-recurrence `updateEvent`
+     * behaved, plus persisting [recurrenceRule] on the master row when provided.
+     */
+    private fun updateAllEvents(
+        eventId: String,
+        calendarId: String,
+        title: String,
+        startDate: Long,
+        endDate: Long,
+        isAllDay: Boolean,
+        description: String?,
+        url: String?,
+        location: String?,
+        reminders: List<Long>?,
+        recurrenceRule: String?,
+        callback: (Result<Event>) -> Unit,
+    ) {
+        val descriptionUrlHelper = DescriptionUrlHelper()
+        val mergedDescription = descriptionUrlHelper.mergeDescriptionAndUrl(description, url)
+
+        val eventValues = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.DESCRIPTION, mergedDescription)
+            put(CalendarContract.Events.EVENT_LOCATION, location)
+            put(CalendarContract.Events.DTSTART, startDate)
+            put(CalendarContract.Events.DTEND, endDate)
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+            put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            if (recurrenceRule != null) put(CalendarContract.Events.RRULE, recurrenceRule)
+        }
+
+        val selection = CalendarContract.Events._ID + " = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        val updated = contentResolver.update(eventContentUri, eventValues, selection, selectionArgs)
+
+        replaceReminders(eventId, reminders)
+
+        if (updated > 0) {
+            retrieveEvent(eventId, callback)
+        } else {
+            callback(
+                Result.failure(
+                    FlutterError(
+                        code = "NOT_FOUND",
+                        message = "Failed to update event"
+                    )
+                )
+            )
+        }
+    }
+
+    /**
+     * "thisEvent" span: inserts a new recurrence-exception row (rather than
+     * updating the master row), carrying the edited fields for that single
+     * occurrence only.
+     */
+    private fun updateThisEventOccurrence(
+        eventId: String,
+        calendarId: String,
+        title: String,
+        startDate: Long,
+        endDate: Long,
+        isAllDay: Boolean,
+        description: String?,
+        url: String?,
+        location: String?,
+        reminders: List<Long>?,
+        originalInstanceTime: Long,
+        callback: (Result<Event>) -> Unit,
+    ) {
+        val descriptionUrlHelper = DescriptionUrlHelper()
+        val mergedDescription = descriptionUrlHelper.mergeDescriptionAndUrl(description, url)
+
+        val values = ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_ID, eventId.toLong())
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, originalInstanceTime)
+            put(CalendarContract.Events.DTSTART, startDate)
+            put(CalendarContract.Events.DTEND, endDate)
+            put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.DESCRIPTION, mergedDescription)
+            put(CalendarContract.Events.EVENT_LOCATION, location)
+            put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+        }
+
+        val uri = contentResolver.insert(eventContentUri, values)
+        val newId = uri?.lastPathSegment ?: eventId
+
+        replaceReminders(newId, reminders)
+
+        retrieveEvent(newId, callback)
+    }
+
+    /**
+     * "thisAndFuture" span: truncates the existing master series with an
+     * UNTIL right before [originalInstanceTime] (when it recurs), then inserts
+     * a brand-new master event starting at [originalInstanceTime] carrying the
+     * edited fields and continuing the series (using [recurrenceRule] if
+     * provided, otherwise the old RRULE stripped of any COUNT/UNTIL so the new
+     * tail continues indefinitely unless the caller set a new end condition).
+     */
+    private fun updateThisAndFutureEvents(
+        eventId: String,
+        calendarId: String,
+        title: String,
+        startDate: Long,
+        endDate: Long,
+        isAllDay: Boolean,
+        description: String?,
+        url: String?,
+        location: String?,
+        reminders: List<Long>?,
+        recurrenceRule: String?,
+        originalInstanceTime: Long,
+        callback: (Result<Event>) -> Unit,
+    ) {
+        val existingRrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, eventId)
+        if (existingRrule != null) {
+            val patchedRrule = RecurrenceHelper.patchWithUntil(existingRrule, originalInstanceTime)
+            val truncateValues = ContentValues().apply { put(CalendarContract.Events.RRULE, patchedRrule) }
+            val selection = CalendarContract.Events._ID + " = ?"
+            val selectionArgs = arrayOf(eventId)
+            contentResolver.update(eventContentUri, truncateValues, selection, selectionArgs)
+        }
+
+        val newRrule = recurrenceRule
+            ?: existingRrule
+                ?.split(";")
+                ?.filter { !it.startsWith("UNTIL=") && !it.startsWith("COUNT=") }
+                ?.joinToString(";")
+
+        val duration = endDate - startDate
+        val descriptionUrlHelper = DescriptionUrlHelper()
+        val mergedDescription = descriptionUrlHelper.mergeDescriptionAndUrl(description, url)
+
+        val insertValues = ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.DTSTART, originalInstanceTime)
+            put(CalendarContract.Events.DTEND, originalInstanceTime + duration)
+            put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            put(CalendarContract.Events.DESCRIPTION, mergedDescription)
+            put(CalendarContract.Events.EVENT_LOCATION, location)
+            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+            if (newRrule != null) put(CalendarContract.Events.RRULE, newRrule)
+        }
+
+        val uri = contentResolver.insert(eventContentUri, insertValues)
+        val newId = uri?.lastPathSegment ?: eventId
+
+        replaceReminders(newId, reminders)
+
+        retrieveEvent(newId, callback)
     }
 
     override fun createEventInDefaultCalendar(

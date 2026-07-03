@@ -746,6 +746,9 @@ class EventTests {
             "Description",
             "url",
             "location",
+            null,
+            null,
+            "allEvents",
             null
         ) {
             result = it
@@ -785,7 +788,10 @@ class EventTests {
             "Description",
             "url",
             "location",
-            listOf(10L, 20L)
+            listOf(10L, 20L),
+            null,
+            "allEvents",
+            null
         ) {
             result = it
             latch.countDown()
