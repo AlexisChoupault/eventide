@@ -546,7 +546,9 @@ fileprivate extension EKEvent {
             } ?? [],
             description: notes,
             url: url?.absoluteString,
-            location: location
+            location: location,
+            recurrenceRule: recurrenceRules?.first.map { RRuleSerializer.serialize($0) },
+            originalInstanceTime: occurrenceDate.millisecondsSince1970
         )
     }
 }

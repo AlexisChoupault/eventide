@@ -262,6 +262,65 @@ final class EventTests: XCTestCase {
         waitForExpectations(timeout: timeout)
     }
     
+    func testRetrieveEvents_withRecurrenceRuleAndOriginalInstanceTime_permissionGranted() {
+        let expectation = expectation(description: "Recurring event has been retrieved")
+        
+        let startDate = Date()
+        let endDate = Date().addingTimeInterval(TimeInterval(10))
+        let originalInstanceTime = startDate.addingTimeInterval(TimeInterval(-3600)).millisecondsSince1970
+        
+        let mockEasyEventStore = MockEasyEventStore(
+            calendars: [
+                Calendar(
+                    id: "1",
+                    title: "title",
+                    color: UIColor.red.toInt64(),
+                    isWritable: true,
+                    account: Account(id: "local", name: "local", type: "local")
+                )
+            ],
+            events: [
+                Event(
+                    id: "1",
+                    calendarId: "1",
+                    title: "title",
+                    isAllDay: false,
+                    startDate: startDate.millisecondsSince1970,
+                    endDate: endDate.millisecondsSince1970,
+                    reminders: [],
+                    attendees: [],
+                    description: "description",
+                    url: "url",
+                    recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+                    originalInstanceTime: originalInstanceTime
+                )
+            ]
+        )
+        
+        calendarImplem = CalendarImplem(
+            easyEventStore: mockEasyEventStore,
+            permissionHandler: PermissionGranted()
+        )
+        
+        calendarImplem.retrieveEvents(
+            calendarId: "1",
+            startDate: startDate.addingTimeInterval(TimeInterval(-10)).millisecondsSince1970,
+            endDate: endDate.addingTimeInterval(TimeInterval(10)).millisecondsSince1970
+        ) { retrieveEventsResult in
+            switch (retrieveEventsResult) {
+            case .success(let events):
+                XCTAssertEqual(events.count, 1)
+                XCTAssertEqual(events.first!.recurrenceRule, "FREQ=WEEKLY;BYDAY=MO")
+                XCTAssertEqual(events.first!.originalInstanceTime, originalInstanceTime)
+                expectation.fulfill()
+            case .failure:
+                XCTFail("Event should have been retrieved")
+            }
+        }
+        
+        waitForExpectations(timeout: timeout)
+    }
+    
     func testRetrieveEvents_calendarNotFound_permissionGranted() {
         let expectation = expectation(description: "Events have not been retrieved")
         
