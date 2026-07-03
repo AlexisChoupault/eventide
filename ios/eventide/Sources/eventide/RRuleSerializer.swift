@@ -34,6 +34,7 @@ struct RRuleSerializer {
                 parts.append("COUNT=\(recEnd.occurrenceCount)")
             } else if let endDate = recEnd.endDate {
                 let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.timeZone = TimeZone(identifier: "UTC")
                 formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
                 parts.append("UNTIL=\(formatter.string(from: endDate))")

@@ -88,6 +88,7 @@ struct RRuleParser {
 
     private static func parseUntilDate(_ value: String) -> Date? {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
         if let date = formatter.date(from: value) { return date }
