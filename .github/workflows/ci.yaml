@@ -12,6 +12,7 @@ env:
   FLUTTER_MINIMUM_VERSION: 3.44.0
   JAVA_VERSION: 17
   JAVA_DISTRIBUTION: corretto
+  PACKAGE_PATH: ./package
 
 jobs:
   flutter-tests:
@@ -37,13 +38,15 @@ jobs:
         run: dart format . --set-exit-if-changed
 
       - name: Run tests
-        run: flutter test ./test/* --coverage
+        run: |
+          cd ${{ env.PACKAGE_PATH }}
+          flutter test ./test/* --coverage
 
       - name: Upload coverage report as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: flutter-coverage
-          path: coverage/lcov.info
+          path: ${{ env.PACKAGE_PATH }}/coverage/lcov.info
 
   flutter-minimum-version-tests:
     runs-on: ubuntu-latest
@@ -63,7 +66,9 @@ jobs:
         run: dart analyze . --fatal-infos
 
       - name: Run tests
-        run: flutter test ./test/*
+        run: |
+          cd ${{ env.PACKAGE_PATH }}
+          flutter test ./test/*
 
   ios-tests:
     runs-on: macos-latest
@@ -80,9 +85,8 @@ jobs:
           brew install xcresultparser
           flutter config --enable-swift-package-manager
           flutter pub get
-          cd example/ios
+          cd ${{ env.PACKAGE_PATH }}/example/ios
           flutter build ios --config-only
-          cd ../..
 
       - name: Get latest iOS simulator info
         id: ios-simulator
@@ -96,23 +100,23 @@ jobs:
 
       - name: Run tests
         run: |
-          xcodebuild test -workspace ./example/ios/Runner.xcworkspace \
+          xcodebuild test -workspace ${{ env.PACKAGE_PATH }}/example/ios/Runner.xcworkspace \
             -scheme EventideTests \
             -destination "platform=iOS Simulator,name=${{ steps.ios-simulator.outputs.iphone_name }},OS=${{ steps.ios-simulator.outputs.ios_version }},arch=arm64" \
-            -resultBundlePath build/reports/EventideTests.xcresult \
+            -resultBundlePath ${{ env.PACKAGE_PATH }}/example/ios/build/reports/EventideTests.xcresult \
             -quiet
 
       - name: Prepare coverage xml file
         run: |
           xcresultparser \
             --output-format cobertura \
-            build/reports/EventideTests.xcresult > build/reports/ios-coverage.xml
+            ${{ env.PACKAGE_PATH }}/example/ios/build/reports/EventideTests.xcresult > ${{ env.PACKAGE_PATH }}/example/ios/build/reports/ios-coverage.xml
 
       - name: Upload coverage report as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: ios-coverage
-          path: build/reports/ios-coverage.xml
+          path: ${{ env.PACKAGE_PATH }}/example/ios/build/reports/ios-coverage.xml
 
   android-tests:
     runs-on: ubuntu-latest
@@ -135,13 +139,13 @@ jobs:
 
       - name: Build and test
         run: |
-          ./example/android/gradlew testDebugUnitTest -p ./example/android/
+          ${{ env.PACKAGE_PATH }}/example/android/gradlew testDebugUnitTest -p ${{ env.PACKAGE_PATH }}/example/android/
 
       - name: Upload coverage report as artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: android-coverage
-          path: android/build/reports/jacocoTestReport.xml
+          path: ${{ env.PACKAGE_PATH }}/android/build/reports/jacocoTestReport.xml
     
   ios-build-spm:
     runs-on: macos-latest
@@ -157,12 +161,12 @@ jobs:
         run: |
           flutter config --enable-swift-package-manager
           flutter pub get
-          cd example
+          cd ${{ env.PACKAGE_PATH }}/example
           flutter build ios --config-only --no-codesign
 
       - name: Build iOS framework with SPM
         run: |
-          cd example
+          cd ${{ env.PACKAGE_PATH }}/example
           flutter build ios --simulator
 
   android-build:
@@ -180,7 +184,7 @@ jobs:
 
       - name: Build Android APK
         run: |
-          cd example
+          cd ${{ env.PACKAGE_PATH }}/example
           flutter build apk --debug
 
   more-complex-examples-build:
@@ -200,7 +204,7 @@ jobs:
 
       - name: Build ${{ matrix.app }} APK
         run: |
-          cd example/more-complex/${{ matrix.app }}
+          cd examples/${{ matrix.app }}
           flutter build apk --debug
 
   upload-coverage:
@@ -213,25 +217,26 @@ jobs:
         if: needs.flutter-tests.result == 'success'
         with:
           name: flutter-coverage
-          path: coverage
+          path: ${{ env.PACKAGE_PATH }}/coverage
 
       - name: Download ios coverage report
         uses: actions/download-artifact@v4
         if: needs.ios-tests.result == 'success'
         with:
           name: ios-coverage
-          path: build/reports
+          path: ${{ env.PACKAGE_PATH }}/build/reports
 
       - name: Download android coverage report
         uses: actions/download-artifact@v4
         if: needs.android-tests.result == 'success'
         with:
           name: android-coverage
-          path: android/build/reports/
+          path: ${{ env.PACKAGE_PATH }}/android/build/reports/
 
       - name: Prepare coverage files list
         id: coverage-files
         run: |
+          cd ${{ env.PACKAGE_PATH }}
           files=""
           if [ -f "coverage/lcov.info" ]; then
             files="$files,coverage/lcov.info"
