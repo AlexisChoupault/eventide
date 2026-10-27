@@ -22,14 +22,48 @@ object RecurrenceHelper {
      * time of the first excluded occurrence) in epoch milliseconds — the
      * UNTIL value is set to [untilMs] - 1ms so that occurrence is excluded
      * from the recurring series.
+     *
+     * If [isAllDay] is true, UNTIL is formatted as date-only (yyyyMMdd)
+     * per RFC 5545 section 3.3.10.
      */
-    fun patchWithUntil(rrule: String, untilMs: Long): String {
-        val untilFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+    fun patchWithUntil(rrule: String, untilMs: Long, isAllDay: Boolean = false): String {
+        val pattern = if (isAllDay) "yyyyMMdd" else "yyyyMMdd'T'HHmmss'Z'"
+        val untilFormat = SimpleDateFormat(pattern, Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
         val untilStr = untilFormat.format(Date(untilMs - 1))
         val stripped = stripUntilAndCount(rrule)
         return if (stripped.isEmpty()) "UNTIL=$untilStr" else "$stripped;UNTIL=$untilStr"
+    }
+
+    /**
+     * Formats duration in RFC 5545 duration format for CalendarContract.Events.DURATION.
+     */
+    fun formatRfcDuration(durationMs: Long, isAllDay: Boolean = false): String {
+        return if (isAllDay && durationMs >= 86_400_000L && durationMs % 86_400_000L == 0L) {
+            "P${durationMs / 86_400_000L}D"
+        } else {
+            "P${maxOf(durationMs / 1000L, 0L)}S"
+        }
+    }
+
+    /**
+     * Checks if the master event is an all-day event.
+     */
+    fun isMasterAllDay(
+        contentResolver: ContentResolver,
+        eventContentUri: Uri,
+        eventId: String,
+    ): Boolean {
+        val projection = arrayOf(CalendarContract.Events.ALL_DAY)
+        val selection = CalendarContract.Events._ID + " = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        val cursor = contentResolver.query(eventContentUri, projection, selection, selectionArgs, null)
+        cursor?.use {
+            if (it.moveToFirst()) return it.getInt(0) == 1
+        }
+        return false
     }
 
     /**

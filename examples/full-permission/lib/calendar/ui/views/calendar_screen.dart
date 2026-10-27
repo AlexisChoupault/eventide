@@ -77,7 +77,9 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
               final mappedEvents = events
                   .map((event) => CalendarEventData(
                         event: event,
-                        title: event.title,
+                        title: (event.recurrenceRule != null || event.originalInstanceTime != null)
+                            ? '🔁 ${event.title}'
+                            : event.title,
                         date: event.startDate,
                         endDate: event.endDate,
                         color: calendar.color,
@@ -127,6 +129,9 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                 children: [
                   MonthView(
                     controller: _controller,
+                    onPageChange: (date, pageIndex) {
+                      BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
+                    },
                     onEventTap: (calendarEventData, date) {
                       if (state case Value(:final data?)) {
                         final event = calendarEventData.event;
@@ -161,7 +166,8 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                               child: EventForm(
                                 calendars: [...?state.data?.calendars.keys],
                                 initialDate: date,
-                                onSubmit: (selectedCalendar, title, description, isAllDay, startDate, endDate) async {
+                                onSubmit: (selectedCalendar, title, description, isAllDay, startDate, endDate,
+                                    recurrenceRule) async {
                                   if (selectedCalendar == null) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
@@ -179,6 +185,7 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                                       isAllDay: isAllDay,
                                       startDate: startDate,
                                       endDate: endDate,
+                                      recurrenceRule: recurrenceRule,
                                     );
 
                                     if (context.mounted) {
@@ -205,9 +212,15 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                   ),
                   WeekView(
                     controller: _controller,
+                    onPageChange: (date, pageIndex) {
+                      BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
+                    },
                   ),
                   DayView(
                     controller: _controller,
+                    onPageChange: (date, pageIndex) {
+                      BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
+                    },
                   ),
                 ],
               ),

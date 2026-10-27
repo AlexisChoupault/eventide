@@ -383,10 +383,9 @@ final class EasyEventStore: EasyEventStoreProtocol {
             ekEvent.recurrenceRules = [ekRule]
         }
 
-        // Only apply "future events" span semantics when we actually resolved a
-        // specific occurrence; a fallback to the master event (missing/invalid
-        // originalInstanceTime) always saves with `.thisEvent`.
-        let ekSpan: EKSpan = (span == "thisAndFuture" && resolvedOccurrence) ? .futureEvents : .thisEvent
+        // Apply "future events" span semantics when resolving a specific occurrence
+        // with "thisAndFuture", or when updating the master event for the whole series ("allEvents").
+        let ekSpan: EKSpan = ((span == "thisAndFuture" && resolvedOccurrence) || (span == "allEvents" && ekEvent.hasRecurrenceRules)) ? .futureEvents : .thisEvent
 
         do {
             try eventStore.save(ekEvent, span: ekSpan, commit: true)
@@ -485,7 +484,8 @@ final class EasyEventStore: EasyEventStoreProtocol {
         }
 
         do {
-            try eventStore.remove(event, span: .thisEvent)
+            let ekSpan: EKSpan = event.hasRecurrenceRules ? .futureEvents : .thisEvent
+            try eventStore.remove(event, span: ekSpan)
 
         } catch {
             eventStore.reset()

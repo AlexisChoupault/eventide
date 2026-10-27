@@ -461,12 +461,14 @@ class CalendarImplem(
                             put(CalendarContract.Events.DESCRIPTION, mergedDescription)
                             put(CalendarContract.Events.EVENT_LOCATION, location)
                             put(CalendarContract.Events.DTSTART, startDate)
-                            put(CalendarContract.Events.DTEND, endDate)
-                            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-                            put(CalendarContract.Events.ALL_DAY, isAllDay.toInt())
                             if (recurrenceRule != null) {
                                 put(CalendarContract.Events.RRULE, recurrenceRule)
+                                put(CalendarContract.Events.DURATION, RecurrenceHelper.formatRfcDuration(endDate - startDate, isAllDay))
+                            } else {
+                                put(CalendarContract.Events.DTEND, endDate)
                             }
+                            put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
+                            put(CalendarContract.Events.ALL_DAY, isAllDay.toInt())
                         }
 
                         val eventUri = contentResolver.insert(eventContentUri, eventValues)
@@ -694,10 +696,15 @@ class CalendarImplem(
             put(CalendarContract.Events.DESCRIPTION, mergedDescription)
             put(CalendarContract.Events.EVENT_LOCATION, location)
             put(CalendarContract.Events.DTSTART, startDate)
-            put(CalendarContract.Events.DTEND, endDate)
+            if (recurrenceRule != null) {
+                put(CalendarContract.Events.RRULE, recurrenceRule)
+                put(CalendarContract.Events.DURATION, RecurrenceHelper.formatRfcDuration(endDate - startDate, isAllDay))
+                putNull(CalendarContract.Events.DTEND)
+            } else {
+                put(CalendarContract.Events.DTEND, endDate)
+            }
             put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
             put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-            if (recurrenceRule != null) put(CalendarContract.Events.RRULE, recurrenceRule)
         }
 
         val selection = CalendarContract.Events._ID + " = ?"
@@ -795,7 +802,8 @@ class CalendarImplem(
     ) {
         val existingRrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, eventId)
         if (existingRrule != null) {
-            val patchedRrule = RecurrenceHelper.patchWithUntil(existingRrule, originalInstanceTime)
+            val isMasterAllDay = RecurrenceHelper.isMasterAllDay(contentResolver, eventContentUri, eventId)
+            val patchedRrule = RecurrenceHelper.patchWithUntil(existingRrule, originalInstanceTime, isMasterAllDay)
             val truncateValues = ContentValues().apply { put(CalendarContract.Events.RRULE, patchedRrule) }
             val selection = CalendarContract.Events._ID + " = ?"
             val selectionArgs = arrayOf(eventId)
@@ -813,12 +821,17 @@ class CalendarImplem(
             put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
             put(CalendarContract.Events.TITLE, title)
             put(CalendarContract.Events.DTSTART, originalInstanceTime)
-            put(CalendarContract.Events.DTEND, originalInstanceTime + duration)
+            if (newRrule != null) {
+                put(CalendarContract.Events.RRULE, newRrule)
+                put(CalendarContract.Events.DURATION, RecurrenceHelper.formatRfcDuration(duration, isAllDay))
+            } else {
+                put(CalendarContract.Events.DTEND, originalInstanceTime + duration)
+            }
             put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
             put(CalendarContract.Events.DESCRIPTION, mergedDescription)
             put(CalendarContract.Events.EVENT_LOCATION, location)
             put(CalendarContract.Events.EVENT_TIMEZONE, "UTC")
-            if (newRrule != null) put(CalendarContract.Events.RRULE, newRrule)
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         }
 
         val uri = contentResolver.insert(eventContentUri, insertValues)
@@ -1141,7 +1154,8 @@ class CalendarImplem(
             return
         }
 
-        val patchedRrule = RecurrenceHelper.patchWithUntil(rrule, originalInstanceTime)
+        val isMasterAllDay = RecurrenceHelper.isMasterAllDay(contentResolver, eventContentUri, eventId)
+        val patchedRrule = RecurrenceHelper.patchWithUntil(rrule, originalInstanceTime, isMasterAllDay)
         val values = ContentValues().apply {
             put(CalendarContract.Events.RRULE, patchedRrule)
         }

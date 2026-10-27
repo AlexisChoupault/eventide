@@ -54,6 +54,8 @@ final class EventDetailsCubit extends Cubit<Value<ETEvent>> {
     required bool isAllDay,
     required TZDateTime startDate,
     required TZDateTime endDate,
+    String? recurrenceRule,
+    ETSpan span = ETSpan.thisEvent,
   }) async {
     if (state case Value(:final data?)) {
       await state.fetchFrom(() async {
@@ -64,8 +66,23 @@ final class EventDetailsCubit extends Cubit<Value<ETEvent>> {
           isAllDay: isAllDay,
           startDate: startDate,
           endDate: endDate,
+          recurrenceRule: recurrenceRule,
+          span: span,
+          originalInstanceTime: data.originalInstanceTime,
         );
       }).forEach(emit);
+    }
+  }
+
+  Future<void> deleteEvent({
+    ETSpan span = ETSpan.thisEvent,
+  }) async {
+    if (state case Value(:final data?)) {
+      await _calendarPlugin.deleteEvent(
+        eventId: data.id,
+        span: span,
+        originalInstanceTime: data.originalInstanceTime,
+      );
     }
   }
 }

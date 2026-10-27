@@ -39,6 +39,8 @@ extension ETEventCopy on ETEvent {
       location: location,
       reminders: reminders ?? this.reminders,
       attendees: attendees,
+      recurrenceRule: recurrenceRule,
+      originalInstanceTime: originalInstanceTime,
     );
   }
 }
