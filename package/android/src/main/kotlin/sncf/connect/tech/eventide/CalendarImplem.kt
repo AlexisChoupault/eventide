@@ -802,8 +802,7 @@ class CalendarImplem(
     ) {
         val existingRrule = RecurrenceHelper.getMasterRrule(contentResolver, eventContentUri, eventId)
         if (existingRrule != null) {
-            val isMasterAllDay = RecurrenceHelper.isMasterAllDay(contentResolver, eventContentUri, eventId)
-            val patchedRrule = RecurrenceHelper.patchWithUntil(existingRrule, originalInstanceTime, isMasterAllDay)
+            val patchedRrule = RecurrenceHelper.patchWithUntil(existingRrule, originalInstanceTime)
             val truncateValues = ContentValues().apply { put(CalendarContract.Events.RRULE, patchedRrule) }
             val selection = CalendarContract.Events._ID + " = ?"
             val selectionArgs = arrayOf(eventId)
@@ -955,6 +954,10 @@ class CalendarImplem(
                             val start = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
                             val end = c.getLong(c.getColumnIndexOrThrow(CalendarContract.Instances.END))
                             val recurrenceRule = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.RRULE))
+                            val untilMs = RecurrenceHelper.getUntilMillis(recurrenceRule)
+                            if (untilMs != null && start > untilMs) {
+                                continue
+                            }
                             val recurrenceDates = c.getString(c.getColumnIndexOrThrow(CalendarContract.Instances.RDATE))
                             val isAllDay = c.getInt(c.getColumnIndexOrThrow(CalendarContract.Instances.ALL_DAY)).toBoolean()
 
@@ -1154,8 +1157,7 @@ class CalendarImplem(
             return
         }
 
-        val isMasterAllDay = RecurrenceHelper.isMasterAllDay(contentResolver, eventContentUri, eventId)
-        val patchedRrule = RecurrenceHelper.patchWithUntil(rrule, originalInstanceTime, isMasterAllDay)
+        val patchedRrule = RecurrenceHelper.patchWithUntil(rrule, originalInstanceTime)
         val values = ContentValues().apply {
             put(CalendarContract.Events.RRULE, patchedRrule)
         }

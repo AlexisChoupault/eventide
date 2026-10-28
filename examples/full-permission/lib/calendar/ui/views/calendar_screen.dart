@@ -129,6 +129,8 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                 children: [
                   MonthView(
                     controller: _controller,
+                    minMonth: DateTime(1990),
+                    maxMonth: DateTime(2050),
                     onPageChange: (date, pageIndex) {
                       BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
                     },
@@ -212,12 +214,16 @@ final class _CalendarScreenState extends State<CalendarScreen> with SingleTicker
                   ),
                   WeekView(
                     controller: _controller,
+                    minDay: DateTime(1990),
+                    maxDay: DateTime(2050),
                     onPageChange: (date, pageIndex) {
                       BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
                     },
                   ),
                   DayView(
                     controller: _controller,
+                    minDay: DateTime(1990),
+                    maxDay: DateTime(2050),
                     onPageChange: (date, pageIndex) {
                       BlocProvider.of<CalendarCubit>(context).loadEventsForMonth(date);
                     },

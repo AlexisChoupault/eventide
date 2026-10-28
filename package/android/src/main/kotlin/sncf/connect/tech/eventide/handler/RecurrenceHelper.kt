@@ -23,17 +23,63 @@ object RecurrenceHelper {
      * UNTIL value is set to [untilMs] - 1ms so that occurrence is excluded
      * from the recurring series.
      *
-     * If [isAllDay] is true, UNTIL is formatted as date-only (yyyyMMdd)
-     * per RFC 5545 section 3.3.10.
+     * Note: Android's EventRecurrence parser requires at least 15 characters
+     * for UNTIL (yyyyMMdd'T'HHmmss'Z'), even for all-day events.
      */
-    fun patchWithUntil(rrule: String, untilMs: Long, isAllDay: Boolean = false): String {
-        val pattern = if (isAllDay) "yyyyMMdd" else "yyyyMMdd'T'HHmmss'Z'"
-        val untilFormat = SimpleDateFormat(pattern, Locale.US).apply {
+    fun patchWithUntil(rrule: String, untilMs: Long): String {
+        val untilFormat = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
         val untilStr = untilFormat.format(Date(untilMs - 1))
         val stripped = stripUntilAndCount(rrule)
         return if (stripped.isEmpty()) "UNTIL=$untilStr" else "$stripped;UNTIL=$untilStr"
+    }
+
+    /**
+     * Extracts the UNTIL boundary timestamp in milliseconds (UTC) from an RRULE, if present.
+     */
+    fun getUntilMillis(rrule: String?): Long? {
+        if (rrule == null) return null
+        for (part in rrule.split(";")) {
+            if (part.startsWith("UNTIL=")) {
+                val value = part.substring(6)
+                return try {
+                    if (value.length >= 15) {
+                        val format = SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
+                        format.parse(value.substring(0, 15))?.time
+                    } else if (value.length >= 8) {
+                        val format = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
+                        format.parse(value.substring(0, 8))?.time?.let { it + 86400000L - 1L }
+                    } else null
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Fetches the DTSTART timestamp of a master event from CalendarContract.Events.
+     */
+    fun getMasterDtStart(
+        contentResolver: ContentResolver,
+        eventContentUri: Uri,
+        eventId: String,
+    ): Long? {
+        val projection = arrayOf(CalendarContract.Events.DTSTART)
+        val selection = CalendarContract.Events._ID + " = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        val cursor = contentResolver.query(eventContentUri, projection, selection, selectionArgs, null)
+        cursor?.use {
+            if (it.moveToFirst() && !it.isNull(0)) return it.getLong(0)
+        }
+        return null
     }
 
     /**
